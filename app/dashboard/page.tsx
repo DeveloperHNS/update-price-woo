@@ -1,117 +1,111 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { fetchAll, wooFetch } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
 import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check } from "lucide-react";
 
+type WooCategory = {
+  id: number;
+  name: string;
+  parent: number;
+  count: number;
+};
+
+const PER_PAGE = 20;
+
 export default function ManageProducts() {
-  const [products, setProducts] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<WooProduct[]>([]);
+  const [categories, setCategories] = useState<WooCategory[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  
+
   // Filters
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [catSearch, setCatSearch] = useState("");
   const [selCatId, setSelCatId] = useState<number | null>(null);
   const [showCatDD, setShowCatDD] = useState(false);
-  
-  // Pagination & Sorting
+
+  // Pagination
   const [page, setPage] = useState(1);
-  const PER_PAGE = 20;
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [hasNextPage, setHasNextPage] = useState(false);
 
   // State for Variations
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [varCache, setVarCache] = useState<Record<number, any[]>>({});
+  const [varCache, setVarCache] = useState<Record<number, WooVariation[]>>({});
   const [varLoading, setVarLoading] = useState<Set<number>>(new Set());
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
 
-  const loadData = async (forceRefresh = false) => {
-    setLoading(true);
-    setError("");
-    try {
-      const [cats, prods] = await Promise.all([
-        fetchAll("products/categories", {}, forceRefresh),
-        fetchAll("products", { orderby: "date", order: "desc" }, forceRefresh)
-      ]);
-      setCategories(cats.sort((a: any, b: any) => a.parent - b.parent || a.name.localeCompare(b.name)));
-      setProducts(prods);
-    } catch (err: any) {
-      setError(err.message || "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
-    loadData();
+    setPage(1);
+  }, [selCatId]);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const cats = await wooFetch(
+          "products/categories",
+          "GET",
+          undefined,
+          { per_page: 100, page: 1, _fields: "id,name,parent,count" }
+        ) as WooCategory[];
+        setCategories(cats.sort((a, b) => a.parent - b.parent || a.name.localeCompare(b.name)));
+      } catch {
+        // Category fetch failure should not block product page rendering.
+      }
+    };
+    loadCategories();
   }, []);
+
+  useEffect(() => {
+    const loadProductsPage = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const params: Record<string, string | number> = {
+          per_page: PER_PAGE,
+          page,
+          orderby: "date",
+          order: "desc",
+          _fields: "id,name,sku,type,regular_price,parent",
+        };
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (selCatId !== null) params.category = selCatId;
+
+        const items = await wooFetch("products", "GET", undefined, params) as WooProduct[];
+        const parentProducts = items.filter((item) => !item.parent || item.parent === 0);
+        setProducts(parentProducts);
+        setHasNextPage(items.length === PER_PAGE);
+
+        if (page === 1 && !debouncedSearch && selCatId === null) {
+          const pending = consumePendingProduct();
+          if (pending) {
+            setProducts((prev) => [pending, ...prev.filter((p) => p.id !== pending.id)].slice(0, PER_PAGE));
+          }
+        }
+      } catch (err: any) {
+        setError(err.message || "Failed to load products");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProductsPage();
+  }, [page, debouncedSearch, selCatId]);
 
   const showToast = (msg: string, type: "success"|"error"|"loading") => {
     setToast({ msg, type });
     if (type !== "loading") setTimeout(() => setToast(null), 3500);
-  };
-
-  // Fuzzy Search Logic
-  const filteredProducts = useMemo(() => {
-    let list = products;
-    
-    // Category Filter
-    if (selCatId !== null) {
-      list = list.filter(p => p.categories?.some((c: any) => c.id === selCatId));
-    }
-    
-    // Fuzzy Search (all words must be present, order independent)
-    if (search.trim()) {
-      const words = search.toLowerCase().trim().split(/\s+/);
-      list = list.filter(p => {
-        const target = `${p.name} ${p.sku || ''} ${p.id}`.toLowerCase();
-        return words.every(word => target.includes(word));
-      });
-    }
-
-    // Sort
-    if (sortKey) {
-      list = [...list].sort((a, b) => {
-        let va = a[sortKey] ?? "";
-        let vb = b[sortKey] ?? "";
-        if (sortKey === "id" || sortKey === "regular_price" || sortKey === "sale_price") {
-          va = Number(va) || 0;
-          vb = Number(vb) || 0;
-        } else {
-          va = String(va).toLowerCase();
-          vb = String(vb).toLowerCase();
-        }
-        if (va < vb) return sortDir === "asc" ? -1 : 1;
-        if (va > vb) return sortDir === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return list;
-  }, [products, search, selCatId, sortKey, sortDir]);
-
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PER_PAGE));
-  // Ensure page is within bounds when filters change
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [totalPages, page]);
-  
-  const currentProducts = filteredProducts.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-
-  const handleSort = (key: string) => {
-    if (sortKey === key) {
-      if (sortDir === "asc") setSortDir("desc");
-      else { setSortKey(null); setSortDir("asc"); }
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
   };
 
   const toggleExpand = async (id: number) => {
@@ -127,7 +121,12 @@ export default function ManageProducts() {
     if (!varCache[id] && !varLoading.has(id)) {
       setVarLoading(prev => new Set(prev).add(id));
       try {
-        const vars = await fetchAll(`products/${id}/variations`);
+        const vars = await wooFetch(
+          `products/${id}/variations`,
+          "GET",
+          undefined,
+          { _fields: "id,sku,regular_price,attributes", per_page: 100, page: 1 }
+        ) as WooVariation[];
         setVarCache(prev => ({ ...prev, [id]: vars }));
       } catch (err: any) {
         showToast("Failed to load variations: " + err.message, "error");
@@ -153,13 +152,22 @@ export default function ManageProducts() {
     ? "All Categories" 
     : categories.find(c => c.id === selCatId)?.name || "Unknown";
 
+  const firstEntry = products.length > 0 ? (page - 1) * PER_PAGE + 1 : 0;
+  const lastEntry = (page - 1) * PER_PAGE + products.length;
+
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Topbar */}
       <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white shrink-0">
         <h2 className="text-xl font-bold text-slate-800">Manage Products</h2>
         <button 
-          onClick={() => loadData(true)}
+          onClick={() => {
+            setExpanded(new Set());
+            setVarCache({});
+            setVarLoading(new Set());
+            setPage(1);
+            setDebouncedSearch(search.trim());
+          }}
           disabled={loading}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
         >
@@ -241,7 +249,7 @@ export default function ManageProducts() {
         )}
 
         <div className="ml-auto text-sm text-slate-500 font-medium">
-          {filteredProducts.length} results
+          {products.length} results (page {page})
         </div>
       </div>
 
@@ -257,7 +265,7 @@ export default function ManageProducts() {
             <AlertCircle className="w-8 h-8 mb-4" />
             <p>{error}</p>
           </div>
-        ) : filteredProducts.length === 0 ? (
+        ) : products.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-500">
             <p>No products found matching your criteria.</p>
           </div>
@@ -266,34 +274,21 @@ export default function ManageProducts() {
             <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
               <tr>
                 <th className="w-10 px-4 py-3"></th>
-                <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort('id')}>
-                  ID {sortKey === 'id' && (sortDir === 'asc' ? '↑' : '↓')}
-                </th>
-                <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort('sku')}>
-                  SKU {sortKey === 'sku' && (sortDir === 'asc' ? '↑' : '↓')}
-                </th>
-                <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort('name')}>
-                  Product Name {sortKey === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
-                </th>
-                <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort('type')}>
-                  Type {sortKey === 'type' && (sortDir === 'asc' ? '↑' : '↓')}
-                </th>
-                <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort('regular_price')}>
-                  Regular Price {sortKey === 'regular_price' && (sortDir === 'asc' ? '↑' : '↓')}
-                </th>
-                <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort('sale_price')}>
-                  Sale Price {sortKey === 'sale_price' && (sortDir === 'asc' ? '↑' : '↓')}
-                </th>
+                <th className="px-4 py-3">ID</th>
+                <th className="px-4 py-3">SKU</th>
+                <th className="px-4 py-3">Product Name</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Regular Price</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {currentProducts.map(p => (
+              {products.map(p => (
                 <ProductRow 
                   key={p.id} 
                   product={p} 
                   expanded={expanded.has(p.id)}
                   onToggleExpand={() => toggleExpand(p.id)}
-                  varCache={varCache[p.id]}
+                  varCache={varCache[p.id] || []}
                   isLoadingVars={varLoading.has(p.id)}
                   onUpdate={(id: number, field: string, val: string, type: string, parentId?: number) => {
                     // We'll pass a function to update local state after successful PUT
@@ -324,7 +319,7 @@ export default function ManageProducts() {
       {/* Pagination */}
       <div className="flex items-center justify-between p-4 border-t border-slate-200 bg-slate-50 shrink-0">
         <div className="text-sm text-slate-500">
-          Showing {Math.min(filteredProducts.length, (page - 1) * PER_PAGE + 1)} to {Math.min(filteredProducts.length, page * PER_PAGE)} of {filteredProducts.length} entries
+          Showing {firstEntry} to {lastEntry} entries
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -335,10 +330,10 @@ export default function ManageProducts() {
             Previous
           </button>
           <span className="text-sm font-medium text-slate-700 px-2">
-            Page {page} of {totalPages}
+            Page {page}
           </span>
           <button 
-            disabled={page >= totalPages}
+            disabled={!hasNextPage || loading}
             onClick={() => setPage(p => p + 1)}
             className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 disabled:opacity-50"
           >
@@ -368,7 +363,15 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, onUpdate, showToast }: any) {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, onUpdate, showToast }: {
+  product: WooProduct;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  varCache: WooVariation[];
+  isLoadingVars: boolean;
+  onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
+  showToast: (msg: string, type: "success"|"error"|"loading") => void;
+}) {
   const isVar = p.type === 'variable';
 
   return (
@@ -402,21 +405,17 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
           {isVar ? <span className="text-slate-400 text-xs italic">— per variation</span> : 
             <EditableCell id={p.id} field="regular_price" val={p.regular_price} type="number" prodType="simple" prefix="Rp " onUpdate={onUpdate} showToast={showToast} />}
         </td>
-        <td className="px-4 py-3 font-mono text-red-600">
-          {isVar ? <span className="text-slate-400 text-xs italic">— per variation</span> : 
-            <EditableCell id={p.id} field="sale_price" val={p.sale_price} type="number" prodType="simple" prefix="Rp " onUpdate={onUpdate} showToast={showToast} />}
-        </td>
       </tr>
 
       {expanded && isVar && (
         isLoadingVars ? (
           <tr className="bg-slate-50 border-l-4 border-l-purple-300">
-            <td colSpan={7} className="px-8 py-4 text-center text-slate-500 text-sm">
+            <td colSpan={6} className="px-8 py-4 text-center text-slate-500 text-sm">
               <RefreshCw className="w-4 h-4 animate-spin inline mr-2" /> Loading variations...
             </td>
           </tr>
-        ) : varCache?.length > 0 ? (
-          varCache.map((v: any) => (
+        ) : varCache.length > 0 ? (
+          varCache.map((v) => (
             <tr key={v.id} className="bg-slate-50 border-l-4 border-l-purple-300 hover:bg-slate-100">
               <td className="px-4 py-2"></td>
               <td className="px-4 py-2 text-slate-400 font-mono text-xs">#{v.id}</td>
@@ -426,7 +425,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
               <td className="px-4 py-2 text-sm text-slate-600">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-px bg-slate-300"></div>
-                  {v.attributes?.map((a: any) => `${a.name}: ${a.option}`).join(' • ') || 'Variation'}
+                  {v.attributes?.map((a) => `${a.name}: ${a.option}`).join(' • ') || 'Variation'}
                 </div>
               </td>
               <td className="px-4 py-2">
@@ -437,14 +436,11 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
               <td className="px-4 py-2 font-mono">
                 <EditableCell id={v.id} parentId={p.id} field="regular_price" val={v.regular_price} type="number" prodType="variation" prefix="Rp " onUpdate={onUpdate} showToast={showToast} />
               </td>
-              <td className="px-4 py-2 font-mono text-red-600">
-                <EditableCell id={v.id} parentId={p.id} field="sale_price" val={v.sale_price} type="number" prodType="variation" prefix="Rp " onUpdate={onUpdate} showToast={showToast} />
-              </td>
             </tr>
           ))
         ) : (
           <tr className="bg-slate-50 border-l-4 border-l-purple-300">
-            <td colSpan={7} className="px-8 py-4 text-center text-slate-500 text-sm italic">
+            <td colSpan={6} className="px-8 py-4 text-center text-slate-500 text-sm italic">
               No variations found for this product.
             </td>
           </tr>
@@ -454,7 +450,17 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   );
 }
 
-function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", onUpdate, showToast }: any) {
+function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", onUpdate, showToast }: {
+  id: number;
+  parentId?: number;
+  field: "sku" | "name" | "regular_price";
+  val: string;
+  type: "text" | "number";
+  prodType: "simple" | "variation";
+  prefix?: string;
+  onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
+  showToast: (msg: string, type: "success"|"error"|"loading") => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(val || "");
   const [saving, setSaving] = useState(false);
