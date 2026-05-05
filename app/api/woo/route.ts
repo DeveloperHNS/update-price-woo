@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       },
     };
 
-    if (data && (method === 'POST' || method === 'PUT')) {
+    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
       opts.body = JSON.stringify(data);
     }
 

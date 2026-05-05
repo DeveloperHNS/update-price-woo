@@ -12,6 +12,7 @@ type WooCategory = {
 };
 
 const PER_PAGE = 20;
+type StockState = "instock" | "outofstock";
 
 export default function ManageProducts() {
   const [products, setProducts] = useState<WooProduct[]>([]);
@@ -34,6 +35,7 @@ export default function ManageProducts() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [varCache, setVarCache] = useState<Record<number, WooVariation[]>>({});
   const [varLoading, setVarLoading] = useState<Set<number>>(new Set());
+  const [updatingStock, setUpdatingStock] = useState<Set<number>>(new Set());
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
@@ -77,7 +79,7 @@ export default function ManageProducts() {
           page,
           orderby: "date",
           order: "desc",
-          _fields: "id,name,sku,type,regular_price,parent",
+          _fields: "id,name,sku,type,regular_price,parent,stock_status",
         };
         if (debouncedSearch) params.search = debouncedSearch;
         if (selCatId !== null) params.category = selCatId;
@@ -125,7 +127,7 @@ export default function ManageProducts() {
           `products/${id}/variations`,
           "GET",
           undefined,
-          { _fields: "id,sku,regular_price,attributes", per_page: 100, page: 1 }
+          { _fields: "id,sku,regular_price,attributes,stock_status", per_page: 100, page: 1 }
         ) as WooVariation[];
         setVarCache(prev => ({ ...prev, [id]: vars }));
       } catch (err: any) {
@@ -151,6 +153,63 @@ export default function ManageProducts() {
   const selectedCatName = selCatId === null 
     ? "All Categories" 
     : categories.find(c => c.id === selCatId)?.name || "Unknown";
+  const getStockState = (status?: string): StockState => status === "outofstock" ? "outofstock" : "instock";
+  const deriveParentStockFromVariations = (variations: WooVariation[]): StockState => {
+    return variations.some((variation) => getStockState(variation.stock_status) === "instock")
+      ? "instock"
+      : "outofstock";
+  };
+  const ensureVariationsLoaded = async (parentId: number): Promise<WooVariation[]> => {
+    const cached = varCache[parentId];
+    if (cached) return cached;
+    const vars = await wooFetch(
+      `products/${parentId}/variations`,
+      "GET",
+      undefined,
+      { _fields: "id,sku,regular_price,attributes,stock_status", per_page: 100, page: 1 }
+    ) as WooVariation[];
+    setVarCache((prev) => ({ ...prev, [parentId]: vars }));
+    return vars;
+  };
+  const toggleProductStock = async (product: WooProduct) => {
+    if (updatingStock.has(product.id)) return;
+    setUpdatingStock((prev) => new Set(prev).add(product.id));
+    showToast("Updating stock...", "loading");
+    try {
+      if (product.type === "variable") {
+        const variations = await ensureVariationsLoaded(product.id);
+        if (variations.length === 0) throw new Error("No variations found");
+        const targetStatus: StockState = deriveParentStockFromVariations(variations) === "instock" ? "outofstock" : "instock";
+        const updatedVariations = await Promise.all(
+          variations.map(async (variation) => {
+            await wooFetch(
+              `products/${product.id}/variations/${variation.id}`,
+              "PATCH",
+              { stock_status: targetStatus }
+            );
+            return { ...variation, stock_status: targetStatus };
+          })
+        );
+        setVarCache((prev) => ({ ...prev, [product.id]: updatedVariations }));
+        const nextParentStatus = deriveParentStockFromVariations(updatedVariations);
+        setProducts((prev) => prev.map((item) => item.id === product.id ? { ...item, stock_status: nextParentStatus } : item));
+      } else {
+        const targetStatus: StockState = getStockState(product.stock_status) === "instock" ? "outofstock" : "instock";
+        await wooFetch(`products/${product.id}`, "PATCH", { stock_status: targetStatus });
+        setProducts((prev) => prev.map((item) => item.id === product.id ? { ...item, stock_status: targetStatus } : item));
+      }
+      showToast("Stock updated", "success");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update stock";
+      showToast("Failed to update stock: " + message, "error");
+    } finally {
+      setUpdatingStock((prev) => {
+        const next = new Set(prev);
+        next.delete(product.id);
+        return next;
+      });
+    }
+  };
 
   const firstEntry = products.length > 0 ? (page - 1) * PER_PAGE + 1 : 0;
   const lastEntry = (page - 1) * PER_PAGE + products.length;
@@ -278,7 +337,9 @@ export default function ManageProducts() {
                 <th className="px-4 py-3">SKU</th>
                 <th className="px-4 py-3">Product Name</th>
                 <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Stock</th>
                 <th className="px-4 py-3">Regular Price</th>
+                <th className="px-4 py-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -290,6 +351,8 @@ export default function ManageProducts() {
                   onToggleExpand={() => toggleExpand(p.id)}
                   varCache={varCache[p.id] || []}
                   isLoadingVars={varLoading.has(p.id)}
+                  isUpdatingStock={updatingStock.has(p.id)}
+                  onToggleStock={() => toggleProductStock(p)}
                   onUpdate={(id: number, field: string, val: string, type: string, parentId?: number) => {
                     // We'll pass a function to update local state after successful PUT
                     if (type === 'variation' && parentId) {
@@ -363,16 +426,19 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, onUpdate, showToast }: {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, onUpdate, showToast }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
   varCache: WooVariation[];
   isLoadingVars: boolean;
+  isUpdatingStock: boolean;
+  onToggleStock: () => void;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success"|"error"|"loading") => void;
 }) {
   const isVar = p.type === 'variable';
+  const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
 
   return (
     <>
@@ -401,16 +467,42 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
             {isVar ? 'Variable' : 'Simple'}
           </span>
         </td>
+        <td className="px-4 py-3">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+            stockStatus === "instock" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+          }`}>
+            {stockStatus}
+          </span>
+        </td>
         <td className="px-4 py-3 font-mono">
           {isVar ? <span className="text-slate-400 text-xs italic">— per variation</span> : 
             <EditableCell id={p.id} field="regular_price" val={p.regular_price} type="number" prodType="simple" prefix="Rp " onUpdate={onUpdate} showToast={showToast} />}
+        </td>
+        <td className="px-4 py-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleStock(); }}
+            disabled={isUpdatingStock}
+            role="switch"
+            aria-checked={stockStatus === "instock"}
+            aria-label={`Toggle stock for ${p.name}`}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              stockStatus === "instock" ? "bg-green-500" : "bg-red-500"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                stockStatus === "instock" ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+          {isUpdatingStock && <span className="ml-2 text-[10px] text-slate-500">Updating...</span>}
         </td>
       </tr>
 
       {expanded && isVar && (
         isLoadingVars ? (
           <tr className="bg-slate-50 border-l-4 border-l-purple-300">
-            <td colSpan={6} className="px-8 py-4 text-center text-slate-500 text-sm">
+            <td colSpan={8} className="px-8 py-4 text-center text-slate-500 text-sm">
               <RefreshCw className="w-4 h-4 animate-spin inline mr-2" /> Loading variations...
             </td>
           </tr>
@@ -433,14 +525,24 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                   Var
                 </span>
               </td>
+              <td className="px-4 py-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                  (v.stock_status === "outofstock" ? "outofstock" : "instock") === "instock"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }`}>
+                  {v.stock_status === "outofstock" ? "outofstock" : "instock"}
+                </span>
+              </td>
               <td className="px-4 py-2 font-mono">
                 <EditableCell id={v.id} parentId={p.id} field="regular_price" val={v.regular_price} type="number" prodType="variation" prefix="Rp " onUpdate={onUpdate} showToast={showToast} />
               </td>
+              <td className="px-4 py-2"></td>
             </tr>
           ))
         ) : (
           <tr className="bg-slate-50 border-l-4 border-l-purple-300">
-            <td colSpan={6} className="px-8 py-4 text-center text-slate-500 text-sm italic">
+            <td colSpan={8} className="px-8 py-4 text-center text-slate-500 text-sm italic">
               No variations found for this product.
             </td>
           </tr>
