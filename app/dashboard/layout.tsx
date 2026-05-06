@@ -53,13 +53,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row h-screen overflow-hidden">
 
       {/* Mobile Top Header */}
-      <div className="md:hidden flex items-center justify-between p-4 bg-slate-900 text-white shrink-0">
-        <div className="flex items-center gap-2">
-          <Store className="w-6 h-6 text-blue-400" />
-          <h1 className="font-bold text-lg leading-tight">Price Manager</h1>
+      <div className="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 text-white shrink-0 z-30">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Store className="w-5 h-5 text-blue-400 shrink-0" />
+          <div className="min-w-0">
+            <h1 className="font-bold text-sm leading-tight truncate">Price Manager</h1>
+            <p className="text-[10px] text-slate-400 truncate">{store ? new URL(store.url).hostname : ""}</p>
+          </div>
         </div>
-        <button onClick={() => setSidebarOpen(true)} className="p-2 -mr-2 text-slate-300 hover:text-white">
-          <Menu className="w-6 h-6" />
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 active:bg-slate-700 min-w-[44px] min-h-[44px] justify-center"
+          aria-label="Buka menu"
+        >
+          <Menu className="w-5 h-5" />
         </button>
       </div>
 
@@ -74,19 +81,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Sidebar */}
       <aside className={`fixed md:static inset-y-0 left-0 z-50 w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
 
-        {/* Logo + Store */}
-        <div className="p-6 flex items-center justify-between">
-          <div className="flex items-center gap-3 text-white">
-            <Store className="w-8 h-8 text-blue-400 shrink-0" />
+        {/* Logo + Store + Close button */}
+        <div className="px-5 py-4 flex items-center justify-between border-b border-slate-800">
+          <div className="flex items-center gap-3 text-white min-w-0">
+            <Store className="w-7 h-7 text-blue-400 shrink-0" />
             <div className="min-w-0">
-              <h1 className="font-bold text-lg leading-tight">Price Manager</h1>
-              <div className="text-xs text-slate-400 truncate w-36" title={store.url}>
+              <h1 className="font-bold text-base leading-tight">Price Manager</h1>
+              <div className="text-xs text-slate-400 truncate w-32" title={store.url}>
                 {new URL(store.url).hostname}
               </div>
             </div>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden p-2 -mr-2 text-slate-400 hover:text-white">
-            <X className="w-6 h-6" />
+          {/* Close sidebar — mobile only */}
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 active:bg-slate-700 min-w-[44px] min-h-[44px] justify-center shrink-0"
+            aria-label="Tutup menu"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
 import { logActivity } from "@/lib/activity-log";
-import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock } from "lucide-react";
+import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal } from "lucide-react";
 
 type WooCategory = {
   id: number;
@@ -43,6 +43,8 @@ export default function ManageProducts() {
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
+  // Mobile filter panel open/close
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -273,209 +275,256 @@ export default function ManageProducts() {
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Topbar */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white shrink-0">
-        <h2 className="text-xl font-bold text-slate-800">Manage Products</h2>
-        <button 
-          onClick={() => {
-            setExpanded(new Set());
-            setVarCache({});
-            setVarLoading(new Set());
-            setPage(1);
-            setDebouncedSearch(search.trim());
-          }}
-          disabled={loading}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Reload
-        </button>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white shrink-0 gap-2">
+        <div className="min-w-0">
+          <h2 className="text-base font-bold text-slate-800 leading-tight truncate">Manage Products</h2>
+          <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">
+            {loading ? "Loading..." : `${products.length} produk — halaman ${page}`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Mobile: filter toggle */}
+          <button
+            onClick={() => setFilterOpen(f => !f)}
+            className={`sm:hidden flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filterOpen || selCatId !== null || search
+                ? "bg-blue-100 text-blue-700"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            Filter
+            {(selCatId !== null || search) && (
+              <span className="w-2 h-2 rounded-full bg-blue-500" />
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setExpanded(new Set());
+              setVarCache({});
+              setVarLoading(new Set());
+              setPage(1);
+              setDebouncedSearch(search.trim());
+            }}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Reload</span>
+          </button>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 p-3 border-b border-slate-200 bg-slate-50 shrink-0">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search name, SKU..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-          />
-        </div>
+      {/* Filters — always visible on sm+, collapsible on mobile */}
+      <div className={`border-b border-slate-200 bg-slate-50 shrink-0 ${filterOpen ? "block" : "hidden sm:block"}`}>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 p-3">
+          {/* Search */}
+          <div className="relative w-full sm:flex-1 sm:min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Cari nama produk atau SKU..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+            />
+          </div>
 
-        {/* Category Dropdown */}
-        <div className="relative">
-          <button 
-            onClick={() => setShowCatDD(!showCatDD)}
-            className="flex items-center justify-between gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-700 min-w-[200px] hover:bg-slate-50 focus:ring-2 focus:ring-blue-500"
-          >
-            <span className="truncate max-w-[160px]">{selectedCatName}</span>
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          </button>
+          {/* Category Dropdown */}
+          <div className="relative w-full sm:w-auto">
+            <button
+              onClick={() => setShowCatDD(!showCatDD)}
+              className="flex items-center justify-between gap-2 px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-700 w-full sm:min-w-[180px] hover:bg-slate-50 focus:ring-2 focus:ring-blue-500"
+            >
+              <span className="truncate">{selectedCatName}</span>
+              <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+            </button>
 
-          {showCatDD && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowCatDD(false)} />
-              <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-slate-200 shadow-xl rounded-xl z-20 overflow-hidden flex flex-col max-h-80">
-                <div className="p-2 border-b border-slate-100">
-                  <input 
-                    type="text" 
-                    placeholder="Search categories..." 
-                    value={catSearch}
-                    onChange={e => setCatSearch(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="overflow-y-auto p-1 flex-1">
-                  <button
-                    onClick={() => { setSelCatId(null); setShowCatDD(false); setPage(1); }}
-                    className={`w-full text-left px-3 py-2 text-sm rounded-md hover:bg-slate-100 flex justify-between ${selCatId === null ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700"}`}
-                  >
-                    All Categories
-                    <span className="text-xs text-slate-400 bg-slate-100 px-1.5 rounded">{products.length}</span>
-                  </button>
-                  {catTree.map(c => (
+            {showCatDD && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowCatDD(false)} />
+                <div className="absolute top-full left-0 mt-1 w-full sm:w-64 bg-white border border-slate-200 shadow-xl rounded-xl z-20 overflow-hidden flex flex-col max-h-72">
+                  <div className="p-2 border-b border-slate-100">
+                    <input
+                      type="text"
+                      placeholder="Cari kategori..."
+                      value={catSearch}
+                      onChange={e => setCatSearch(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="overflow-y-auto p-1 flex-1">
                     <button
-                      key={c.id}
-                      onClick={() => { setSelCatId(c.id); setShowCatDD(false); setPage(1); }}
-                      className={`w-full text-left px-3 py-2 text-sm rounded-md hover:bg-slate-100 flex justify-between items-center ${selCatId === c.id ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700"}`}
+                      onClick={() => { setSelCatId(null); setShowCatDD(false); setPage(1); }}
+                      className={`w-full text-left px-3 py-2.5 text-sm rounded-lg hover:bg-slate-100 flex justify-between items-center ${selCatId === null ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700"}`}
                     >
-                      <span className="truncate">
-                        <span className="text-slate-300 mr-1">{'—'.repeat(c.depth)}</span>
-                        {c.name}
-                      </span>
-                      <span className="text-xs text-slate-400 bg-slate-100 px-1.5 rounded ml-2 shrink-0">{c.count}</span>
+                      Semua Kategori
+                      <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{products.length}</span>
                     </button>
-                  ))}
+                    {catTree.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => { setSelCatId(c.id); setShowCatDD(false); setPage(1); }}
+                        className={`w-full text-left px-3 py-2.5 text-sm rounded-lg hover:bg-slate-100 flex justify-between items-center ${selCatId === c.id ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700"}`}
+                      >
+                        <span className="truncate">
+                          <span className="text-slate-300 mr-1">{'—'.repeat(c.depth)}</span>
+                          {c.name}
+                        </span>
+                        <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded ml-2 shrink-0">{c.count}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </>
+            )}
+          </div>
+
+          {/* Active category chip */}
+          {selCatId !== null && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-full text-xs font-medium w-fit">
+              <span className="truncate max-w-[140px]">{selectedCatName}</span>
+              <button
+                onClick={() => setSelCatId(null)}
+                className="hover:text-blue-900 rounded-full p-0.5 hover:bg-blue-200 shrink-0"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {/* Results count — hidden on mobile (shown in topbar subtitle) */}
+          <span className="hidden sm:block ml-auto text-xs text-slate-400 font-medium">
+            {products.length} hasil
+          </span>
+        </div>
+      </div>
+
+      {/* Shared loading/error/empty states */}
+      {(loading || error || products.length === 0) && (
+        <div className="flex-1 flex flex-col items-center justify-center h-64 bg-white">
+          {loading ? (
+            <>
+              <RefreshCw className="w-8 h-8 animate-spin mb-3 text-blue-500" />
+              <p className="text-sm text-slate-500">Memuat produk...</p>
             </>
+          ) : error ? (
+            <>
+              <AlertCircle className="w-8 h-8 mb-3 text-red-400" />
+              <p className="text-sm text-red-500">{error}</p>
+            </>
+          ) : (
+            <p className="text-sm text-slate-400">Tidak ada produk yang sesuai.</p>
           )}
         </div>
+      )}
 
-        {selCatId !== null && (
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-full text-xs font-medium">
-            {selectedCatName}
-            <button onClick={() => setSelCatId(null)} className="hover:text-blue-900 rounded-full p-0.5 hover:bg-blue-200">
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        )}
+      {!loading && !error && products.length > 0 && (() => {
+        const sharedOnUpdate = (id: number, field: string, val: string, type: string, parentId?: number) => {
+          if (type === 'variation' && parentId) {
+            setVarCache(prev => {
+              const arr = [...(prev[parentId] || [])];
+              const idx = arr.findIndex(v => v.id === id);
+              if (idx > -1) arr[idx] = { ...arr[idx], [field]: val };
+              return { ...prev, [parentId]: arr };
+            });
+          } else {
+            setProducts(prev => {
+              const arr = [...prev];
+              const idx = arr.findIndex(x => x.id === id);
+              if (idx > -1) arr[idx] = { ...arr[idx], [field]: val };
+              return arr;
+            });
+          }
+        };
+        const sharedProps = (p: WooProduct) => ({
+          product: p,
+          expanded: expanded.has(p.id),
+          onToggleExpand: () => toggleExpand(p.id),
+          varCache: varCache[p.id] || [],
+          isLoadingVars: varLoading.has(p.id),
+          isUpdatingStock: updatingStock.has(p.id),
+          onToggleStock: () => toggleProductStock(p),
+          isUpdatingStatus: updatingStatus.has(p.id),
+          onToggleStatus: () => toggleProductStatus(p),
+          updatingVarStock,
+          onToggleVariationStock: (v: WooVariation) => toggleVariationStock(p, v),
+          onUpdate: sharedOnUpdate,
+          showToast,
+        });
 
-        <div className="ml-auto text-sm text-slate-500 font-medium">
-          {products.length} results (page {page})
-        </div>
-      </div>
+        return (
+          <>
+            {/* ── Desktop table (sm+) ── */}
+            <div className="hidden sm:flex flex-col flex-1 overflow-auto bg-white">
+              <table className="w-full text-sm text-left min-w-[600px]">
+                <thead className="sticky top-0 z-10">
+                  <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide bg-slate-100 border-b border-slate-200">
+                    <th className="w-10 px-3 py-2.5"></th>
+                    <th className="px-3 py-2.5 hidden md:table-cell">ID</th>
+                    <th className="px-3 py-2.5">SKU</th>
+                    <th className="px-3 py-2.5">Nama Produk</th>
+                    <th className="px-3 py-2.5 hidden md:table-cell">Tipe</th>
+                    <th className="px-3 py-2.5">Stok</th>
+                    <th className="px-3 py-2.5">Harga</th>
+                    <th className="px-3 py-2.5">Kontrol</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {products.map(p => <ProductRow key={p.id} {...sharedProps(p)} />)}
+                </tbody>
+              </table>
+            </div>
 
-      {/* Table Area */}
-      <div className="flex-1 overflow-auto bg-white">
-
-        {loading ? (
-          <div className="flex flex-col items-center justify-center h-64 text-slate-500">
-            <RefreshCw className="w-8 h-8 animate-spin mb-4 text-blue-500" />
-            <p>Loading products from WooCommerce...</p>
-          </div>
-        ) : error ? (
-          <div className="flex flex-col items-center justify-center h-64 text-red-500">
-            <AlertCircle className="w-8 h-8 mb-4" />
-            <p>{error}</p>
-          </div>
-        ) : products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-slate-500">
-            <p>No products found matching your criteria.</p>
-          </div>
-        ) : (
-          <table className="w-full text-sm text-left min-w-[600px]">
-            <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
-              <tr>
-                <th className="w-10 px-3 py-3"></th>
-                <th className="px-3 py-3 hidden md:table-cell">ID</th>
-                <th className="px-3 py-3 hidden sm:table-cell">SKU</th>
-                <th className="px-3 py-3">Product Name</th>
-                <th className="px-3 py-3 hidden md:table-cell">Type</th>
-                <th className="px-3 py-3">Stock</th>
-                <th className="px-3 py-3 hidden sm:table-cell">Regular Price</th>
-                <th className="px-3 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {products.map(p => (
-                <ProductRow
-                  key={p.id}
-                  product={p}
-                  expanded={expanded.has(p.id)}
-                  onToggleExpand={() => toggleExpand(p.id)}
-                  varCache={varCache[p.id] || []}
-                  isLoadingVars={varLoading.has(p.id)}
-                  isUpdatingStock={updatingStock.has(p.id)}
-                  onToggleStock={() => toggleProductStock(p)}
-                  isUpdatingStatus={updatingStatus.has(p.id)}
-                  onToggleStatus={() => toggleProductStatus(p)}
-                  updatingVarStock={updatingVarStock}
-                  onToggleVariationStock={(v) => toggleVariationStock(p, v)}
-                  onUpdate={(id: number, field: string, val: string, type: string, parentId?: number) => {
-                    // We'll pass a function to update local state after successful PUT
-                    if (type === 'variation' && parentId) {
-                      setVarCache(prev => {
-                        const arr = [...(prev[parentId] || [])];
-                        const idx = arr.findIndex(v => v.id === id);
-                        if (idx > -1) arr[idx] = { ...arr[idx], [field]: val };
-                        return { ...prev, [parentId]: arr };
-                      });
-                    } else {
-                      setProducts(prev => {
-                        const arr = [...prev];
-                        const idx = arr.findIndex(x => x.id === id);
-                        if (idx > -1) arr[idx] = { ...arr[idx], [field]: val };
-                        return arr;
-                      });
-                    }
-                  }}
-                  showToast={showToast}
-                />
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+            {/* ── Mobile cards (<sm) ── */}
+            <div className="sm:hidden flex-1 overflow-auto bg-slate-50">
+              <div className="p-3 space-y-2.5 pb-6">
+                {products.map(p => <ProductCard key={p.id} {...sharedProps(p)} />)}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Pagination */}
-      <div className="flex items-center justify-between p-4 border-t border-slate-200 bg-slate-50 shrink-0">
-        <div className="text-sm text-slate-500">
-          Showing {firstEntry} to {lastEntry} entries
-        </div>
-        <div className="flex items-center gap-2">
-          <button 
+      <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 bg-white shrink-0">
+        <p className="text-xs text-slate-400 hidden sm:block">
+          Menampilkan <span className="font-semibold text-slate-600">{firstEntry}–{lastEntry}</span> entri
+        </p>
+        <div className="flex items-center gap-1.5 mx-auto sm:mx-0">
+          <button
             disabled={page <= 1}
             onClick={() => setPage(p => p - 1)}
-            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 disabled:opacity-50"
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Previous
+            ← Prev
           </button>
-          <span className="text-sm font-medium text-slate-700 px-2">
-            Page {page}
+          <span className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 rounded-lg min-w-[60px] text-center">
+            Hal. {page}
           </span>
-          <button 
+          <button
             disabled={!hasNextPage || loading}
             onClick={() => setPage(p => p + 1)}
-            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 disabled:opacity-50"
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Next
+            Next →
           </button>
         </div>
       </div>
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-4 right-4 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border text-sm font-medium z-50 animate-in slide-in-from-bottom-5 ${
-          toast.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
-          toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-          'bg-blue-50 border-blue-200 text-blue-800'
+        <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 max-w-xs ${
+          toast.type === 'success' ? 'bg-white border-green-200 text-green-800 shadow-green-100' :
+          toast.type === 'error'   ? 'bg-white border-red-200 text-red-700 shadow-red-100' :
+                                     'bg-white border-blue-200 text-blue-700 shadow-blue-100'
         }`}>
-          {toast.type === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : 
-           toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : 
-           <AlertCircle className="w-4 h-4 text-red-500" />}
+          {toast.type === 'loading'
+            ? <RefreshCw className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
+            : toast.type === 'success'
+              ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+              : <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+          }
           {toast.msg}
         </div>
       )}
@@ -508,86 +557,102 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
 
   return (
     <>
-      <tr className="hover:bg-slate-50 group">
-        <td className="px-3 py-3">
-          {isVar && (
+      <tr className={`group border-b border-slate-100 transition-colors hover:bg-blue-50/30 ${isVar ? "border-l-2 border-l-purple-300" : "border-l-2 border-l-transparent"}`}>
+        <td className="px-2 py-3 w-10">
+          {isVar ? (
             <button
               onClick={onToggleExpand}
-              className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded transition-colors"
+              className={`p-1.5 rounded-lg transition-colors ${expanded ? "bg-purple-100 text-purple-600" : "text-slate-300 hover:text-slate-600 hover:bg-slate-100"}`}
             >
-              <ChevronRight className={`w-4 h-4 transition-transform ${expanded ? "rotate-90" : ""}`} />
+              <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`} />
             </button>
+          ) : (
+            <div className="w-7 h-7" />
           )}
         </td>
-        <td className="px-3 py-3 text-slate-500 font-mono text-xs hidden md:table-cell">#{p.id}</td>
+        <td className="px-3 py-3 hidden md:table-cell">
+          <span className="text-[11px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">#{p.id}</span>
+        </td>
         <td className="px-3 py-3 hidden sm:table-cell">
           <EditableCell id={p.id} field="sku" val={p.sku} type="text" prodType="simple" productName={p.name} onUpdate={onUpdate} showToast={showToast} />
         </td>
-        <td className="px-3 py-3 font-medium text-slate-800">
-          <EditableCell id={p.id} field="name" val={p.name} type="text" prodType="simple" productName={p.name} onUpdate={onUpdate} showToast={showToast} />
-          {/* Show type + SKU inline on mobile */}
-          <div className="sm:hidden flex items-center gap-1.5 mt-0.5">
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${isVar ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-              {isVar ? 'Var' : 'Simple'}
+        <td className="px-3 py-3 max-w-[220px]">
+          <div className="font-medium text-slate-800 leading-snug">
+            <EditableCell id={p.id} field="name" val={p.name} type="text" prodType="simple" productName={p.name} onUpdate={onUpdate} showToast={showToast} />
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            {/* Type badge — always visible on mobile, hidden md+ (shown in dedicated col) */}
+            <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold md:hidden ${
+              isVar ? "bg-purple-100 text-purple-700" : "bg-sky-100 text-sky-700"
+            }`}>
+              {isVar ? "Variable" : "Simple"}
             </span>
-            {p.sku && <span className="text-[10px] text-slate-400 font-mono">{p.sku}</span>}
+            {p.sku && <span className="sm:hidden text-[10px] text-slate-400 font-mono truncate">{p.sku}</span>}
           </div>
         </td>
         <td className="px-3 py-3 hidden md:table-cell">
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-            isVar ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+            isVar
+              ? "bg-purple-50 text-purple-700 border-purple-200"
+              : "bg-sky-50 text-sky-700 border-sky-200"
           }`}>
-            {isVar ? 'Variable' : 'Simple'}
+            {isVar ? "Variable" : "Simple"}
           </span>
         </td>
         <td className="px-3 py-3">
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-            stockStatus === "instock" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-          }`}>
-            {stockStatus}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${stockStatus === "instock" ? "bg-green-500" : "bg-red-400"}`} />
+            <span className={`text-xs font-medium ${stockStatus === "instock" ? "text-green-700" : "text-red-600"}`}>
+              {stockStatus === "instock" ? "In Stock" : "Habis"}
+            </span>
+          </div>
         </td>
-        <td className="px-3 py-3 font-mono hidden sm:table-cell">
-          {isVar ? <span className="text-slate-400 text-xs italic">— per variation</span> :
-            <EditableCell id={p.id} field="regular_price" val={p.regular_price} type="number" prodType="simple" prefix="Rp " productName={p.name} onUpdate={onUpdate} showToast={showToast} />}
+        <td className="px-3 py-3 hidden sm:table-cell">
+          {isVar
+            ? <span className="text-slate-300 text-xs italic">per variasi</span>
+            : <EditableCell id={p.id} field="regular_price" val={p.regular_price} type="number" prodType="simple" prefix="Rp " productName={p.name} onUpdate={onUpdate} showToast={showToast} />
+          }
         </td>
         <td className="px-3 py-3">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col gap-1.5">
             {/* Stock toggle */}
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleStock(); }}
-              disabled={isUpdatingStock}
-              role="switch"
-              aria-checked={stockStatus === "instock"}
-              aria-label={`Toggle stock for ${p.name}`}
-              title={stockStatus === "instock" ? "Stok: Ada — klik untuk Habis" : "Stok: Habis — klik untuk Ada"}
-              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                stockStatus === "instock" ? "bg-green-500" : "bg-red-400"
-              } disabled:opacity-50 disabled:cursor-not-allowed`}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${stockStatus === "instock" ? "translate-x-6" : "translate-x-1"}`} />
-            </button>
-            {/* Publish / Private toggle */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); onToggleStock(); }}
+                disabled={isUpdatingStock}
+                role="switch"
+                aria-checked={stockStatus === "instock"}
+                title={stockStatus === "instock" ? "Klik untuk Habis" : "Klik untuk In Stock"}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
+                  stockStatus === "instock" ? "bg-green-500" : "bg-slate-300"
+                } disabled:opacity-40 disabled:cursor-not-allowed`}
+              >
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                  stockStatus === "instock" ? "translate-x-[18px]" : "translate-x-0.5"
+                }`} />
+              </button>
+              <span className={`text-[11px] font-medium leading-none ${stockStatus === "instock" ? "text-green-700" : "text-slate-400"}`}>
+                {isUpdatingStock ? <RefreshCw className="w-3 h-3 animate-spin inline" /> : stockStatus === "instock" ? "Ada" : "Habis"}
+              </span>
+            </div>
+            {/* Status (Publish / Private) */}
             <button
               onClick={(e) => { e.stopPropagation(); onToggleStatus(); }}
               disabled={isUpdatingStatus}
-              title={isPublished ? "Status: Publish — klik untuk Private" : "Status: Private — klik untuk Publish"}
-              aria-label={isPublished ? `Private ${p.name}` : `Publish ${p.name}`}
-              className={`inline-flex items-center justify-center h-7 w-7 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              title={isPublished ? "Klik untuk Private" : "Klik untuk Publish"}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit disabled:opacity-40 disabled:cursor-not-allowed ${
                 isPublished
-                  ? "bg-blue-100 text-blue-600 hover:bg-blue-200"
-                  : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+                  ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                  : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200"
               }`}
             >
               {isUpdatingStatus
-                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                : isPublished
-                  ? <Globe className="w-3.5 h-3.5" />
-                  : <Lock className="w-3.5 h-3.5" />
+                ? <RefreshCw className="w-3 h-3 animate-spin" />
+                : isPublished ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />
               }
+              {isPublished ? "Publish" : "Private"}
             </button>
           </div>
-          {isUpdatingStock && <span className="text-[10px] text-slate-400 mt-0.5 block">Updating...</span>}
         </td>
       </tr>
 
@@ -599,53 +664,67 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
             </td>
           </tr>
         ) : varCache.length > 0 ? (
-          varCache.map((v) => (
-            <tr key={v.id} className="bg-slate-50 border-l-4 border-l-purple-300 hover:bg-slate-100">
-              <td className="px-3 py-2"></td>
-              <td className="px-3 py-2 text-slate-400 font-mono text-xs hidden md:table-cell">#{v.id}</td>
-              <td className="px-3 py-2 hidden sm:table-cell">
-                <EditableCell id={v.id} parentId={p.id} field="sku" val={v.sku} type="text" prodType="variation" productName={`${p.name} — Variasi #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
-              </td>
-              <td className="px-3 py-2 text-sm text-slate-600">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-px bg-slate-300 shrink-0"></div>
-                  <span className="truncate">{v.attributes?.map((a) => `${a.name}: ${a.option}`).join(' • ') || 'Variation'}</span>
-                </div>
-              </td>
-              <td className="px-3 py-2 hidden md:table-cell">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-200 text-slate-600 uppercase tracking-wider">
-                  Var
-                </span>
-              </td>
-              <td className="px-3 py-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                  v.stock_status !== "outofstock" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                }`}>
-                  {v.stock_status === "outofstock" ? "outofstock" : "instock"}
-                </span>
-              </td>
-              <td className="px-3 py-2 font-mono hidden sm:table-cell">
-                <EditableCell id={v.id} parentId={p.id} field="regular_price" val={v.regular_price} type="number" prodType="variation" prefix="Rp " productName={`${p.name} — Variasi #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
-              </td>
-              <td className="px-3 py-2">
-                <button
-                  onClick={() => onToggleVariationStock(v)}
-                  disabled={updatingVarStock.has(`${p.id}-${v.id}`)}
-                  role="switch"
-                  aria-checked={v.stock_status !== "outofstock"}
-                  aria-label={`Toggle stock variasi #${v.id}`}
-                  title={v.stock_status !== "outofstock" ? "Stok Ada — klik Habis" : "Stok Habis — klik Ada"}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    v.stock_status !== "outofstock" ? "bg-green-500" : "bg-red-400"
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    v.stock_status !== "outofstock" ? "translate-x-6" : "translate-x-1"
-                  }`} />
-                </button>
-              </td>
-            </tr>
-          ))
+          varCache.map((v) => {
+            const varInStock = v.stock_status !== "outofstock";
+            return (
+              <tr key={v.id} className="bg-violet-50/40 border-b border-slate-100 border-l-2 border-l-purple-400 hover:bg-violet-50">
+                <td className="px-2 py-2 w-10">
+                  <div className="flex justify-center">
+                    <div className="w-px h-4 bg-purple-200" />
+                  </div>
+                </td>
+                <td className="px-3 py-2 hidden md:table-cell">
+                  <span className="text-[10px] font-mono text-purple-400 bg-purple-50 px-1.5 py-0.5 rounded">#{v.id}</span>
+                </td>
+                <td className="px-3 py-2 hidden sm:table-cell">
+                  <EditableCell id={v.id} parentId={p.id} field="sku" val={v.sku} type="text" prodType="variation" productName={`${p.name} — Variasi #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2 text-[13px] text-slate-600 font-medium">
+                    <ChevronRight className="w-3 h-3 text-purple-300 shrink-0" />
+                    <span className="truncate">{v.attributes?.map((a) => `${a.name}: ${a.option}`).join(" • ") || "Variation"}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2 hidden md:table-cell">
+                  <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                    Var
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${varInStock ? "bg-green-500" : "bg-red-400"}`} />
+                    <span className={`text-[11px] font-medium ${varInStock ? "text-green-700" : "text-red-600"}`}>
+                      {varInStock ? "Ada" : "Habis"}
+                    </span>
+                  </div>
+                </td>
+                <td className="px-3 py-2 hidden sm:table-cell">
+                  <EditableCell id={v.id} parentId={p.id} field="regular_price" val={v.regular_price} type="number" prodType="variation" prefix="Rp " productName={`${p.name} — Variasi #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onToggleVariationStock(v)}
+                      disabled={updatingVarStock.has(`${p.id}-${v.id}`)}
+                      role="switch"
+                      aria-checked={varInStock}
+                      title={varInStock ? "Klik untuk Habis" : "Klik untuk Ada"}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ${
+                        varInStock ? "bg-green-500" : "bg-slate-300"
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        varInStock ? "translate-x-[18px]" : "translate-x-0.5"
+                      }`} />
+                    </button>
+                    {updatingVarStock.has(`${p.id}-${v.id}`) && (
+                      <RefreshCw className="w-3 h-3 animate-spin text-slate-400" />
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })
         ) : (
           <tr className="bg-slate-50 border-l-4 border-l-purple-300">
             <td colSpan={8} className="px-8 py-4 text-center text-slate-500 text-sm italic">
@@ -655,6 +734,179 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
         )
       )}
     </>
+  );
+}
+
+// ── ProductCard — mobile card view ──────────────────────────────────────────
+function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, updatingVarStock, onToggleVariationStock, onUpdate, showToast }: {
+  product: WooProduct;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  varCache: WooVariation[];
+  isLoadingVars: boolean;
+  isUpdatingStock: boolean;
+  onToggleStock: () => void;
+  isUpdatingStatus: boolean;
+  onToggleStatus: () => void;
+  updatingVarStock: Set<string>;
+  onToggleVariationStock: (v: WooVariation) => void;
+  onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
+  showToast: (msg: string, type: "success" | "error" | "loading") => void;
+}) {
+  const isVar = p.type === 'variable';
+  const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
+  const isPublished = p.status !== 'private';
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="p-3.5">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+              <span className={`inline-flex items-center px-1.5 py-px rounded-md text-[10px] font-bold tracking-wide ${
+                isVar ? "bg-purple-100 text-purple-700" : "bg-sky-100 text-sky-700"
+              }`}>
+                {isVar ? "Variable" : "Simple"}
+              </span>
+              <span className="text-[10px] font-mono text-slate-300">#{p.id}</span>
+            </div>
+            <div className="font-semibold text-slate-800 text-[15px] leading-snug">
+              <EditableCell id={p.id} field="name" val={p.name} type="text" prodType="simple" productName={p.name} onUpdate={onUpdate} showToast={showToast} />
+            </div>
+            {p.sku && (
+              <div className="text-[11px] text-slate-400 font-mono mt-0.5">SKU: <EditableCell id={p.id} field="sku" val={p.sku} type="text" prodType="simple" productName={p.name} onUpdate={onUpdate} showToast={showToast} /></div>
+            )}
+          </div>
+          {isVar && (
+            <button
+              onClick={onToggleExpand}
+              className={`p-2.5 rounded-xl transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center border ${
+                expanded
+                  ? "bg-purple-100 text-purple-600 border-purple-200"
+                  : "bg-slate-50 text-slate-400 border-slate-200"
+              }`}
+              aria-label={expanded ? "Tutup variasi" : "Lihat variasi"}
+            >
+              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Footer: stock + price + controls */}
+      <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-3">
+        {/* Left info */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${stockStatus === "instock" ? "bg-green-500" : "bg-red-400"}`} />
+            <span className={`text-xs font-semibold ${stockStatus === "instock" ? "text-green-700" : "text-red-600"}`}>
+              {stockStatus === "instock" ? "In Stock" : "Out of Stock"}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-slate-500 font-mono">
+            {isVar
+              ? <span className="italic text-slate-300">Harga per variasi</span>
+              : <EditableCell id={p.id} field="regular_price" val={p.regular_price} type="number" prodType="simple" prefix="Rp " productName={p.name} onUpdate={onUpdate} showToast={showToast} />
+            }
+          </div>
+        </div>
+
+        {/* Right controls */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Stock toggle */}
+          <div className="flex flex-col items-center gap-0.5">
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleStock(); }}
+              disabled={isUpdatingStock}
+              role="switch"
+              aria-checked={stockStatus === "instock"}
+              title={stockStatus === "instock" ? "Klik untuk Habis" : "Klik untuk Ada"}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 ${
+                stockStatus === "instock" ? "bg-green-500" : "bg-slate-300"
+              } disabled:opacity-40`}
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 ${
+                stockStatus === "instock" ? "translate-x-6" : "translate-x-1"
+              }`} />
+            </button>
+            <span className="text-[9px] text-slate-400 font-medium">Stok</span>
+          </div>
+          {/* Status toggle */}
+          <div className="flex flex-col items-center gap-0.5">
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleStatus(); }}
+              disabled={isUpdatingStatus}
+              title={isPublished ? "Klik untuk Private" : "Klik untuk Publish"}
+              className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors disabled:opacity-40 ${
+                isPublished
+                  ? "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
+                  : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"
+              }`}
+            >
+              {isUpdatingStatus
+                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                : isPublished ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />
+              }
+            </button>
+            <span className="text-[9px] text-slate-400 font-medium">{isPublished ? "Publish" : "Private"}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Variations (expanded) */}
+      {expanded && isVar && (
+        <div className="border-t border-purple-100 bg-violet-50/60">
+          {isLoadingVars ? (
+            <div className="flex items-center gap-2 px-4 py-3 text-sm text-slate-500">
+              <RefreshCw className="w-4 h-4 animate-spin text-purple-400" /> Loading variasi...
+            </div>
+          ) : varCache.length === 0 ? (
+            <div className="px-4 py-3 text-xs text-slate-400 italic">Tidak ada variasi.</div>
+          ) : (
+            <div className="divide-y divide-purple-100/60">
+              {varCache.map((v) => {
+                const varInStock = v.stock_status !== "outofstock";
+                return (
+                  <div key={v.id} className="px-4 py-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                        <ChevronRight className="w-3 h-3 text-purple-400 shrink-0" />
+                        <span className="truncate">{v.attributes?.map(a => `${a.name}: ${a.option}`).join(" • ") || "Variation"}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 pl-4.5">
+                        <div className="flex items-center gap-1">
+                          <span className={`w-1.5 h-1.5 rounded-full ${varInStock ? "bg-green-500" : "bg-red-400"}`} />
+                          <span className={`text-[10px] font-medium ${varInStock ? "text-green-700" : "text-red-600"}`}>
+                            {varInStock ? "Ada" : "Habis"}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          <EditableCell id={v.id} parentId={p.id} field="regular_price" val={v.regular_price} type="number" prodType="variation" prefix="Rp " productName={`${p.name} #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onToggleVariationStock(v)}
+                      disabled={updatingVarStock.has(`${p.id}-${v.id}`)}
+                      role="switch"
+                      aria-checked={varInStock}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${
+                        varInStock ? "bg-green-500" : "bg-slate-300"
+                      } disabled:opacity-40`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                        varInStock ? "translate-x-6" : "translate-x-1"
+                      }`} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
