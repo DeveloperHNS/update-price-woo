@@ -2,15 +2,21 @@
 
 import { useState, useEffect } from "react";
 import { fetchAll, wooFetch, appendCache } from "@/lib/api";
+import { logActivity } from "@/lib/activity-log";
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
-import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered } from "lucide-react";
+import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon } from "lucide-react";
 
 export default function UploadProductPage() {
   const [loading, setLoading] = useState(false);
+  const [uploadStep, setUploadStep] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
+
+  // Product images
+  const [images, setImages] = useState<{ id: number; src: string; alt: string }[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
 
   // WooCommerce Data
   const [categories, setCategories] = useState<any[]>([]);
@@ -63,8 +69,8 @@ export default function UploadProductPage() {
           fetchAll("products/categories"),
           fetchAll("products/attributes")
         ]);
-        setCategories(cats.sort((a: any, b: any) => a.parent - b.parent || a.name.localeCompare(b.name)));
-        setGlobalAttributes(attrs);
+        setCategories((cats as any[]).sort((a: any, b: any) => a.parent - b.parent || a.name.localeCompare(b.name)));
+        setGlobalAttributes(attrs as any[]);
       } catch (err: any) {
         showToast("Failed to load WooCommerce metadata: " + err.message, "error");
       } finally {
@@ -77,6 +83,30 @@ export default function UploadProductPage() {
   const showToast = (msg: string, type: "success"|"error"|"loading") => {
     setToast({ msg, type });
     if (type !== "loading") setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleImageUpload = async (files: FileList) => {
+    if (files.length === 0) return;
+    setUploadingImages(true);
+    showToast(`Mengupload ${files.length} gambar...`, "loading");
+    try {
+      const uploaded = await Promise.all(
+        Array.from(files).map(async (file) => {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch("/api/media", { method: "POST", body: formData });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Upload gagal");
+          return { id: data.id as number, src: data.source_url as string, alt: (data.alt_text as string) || file.name };
+        })
+      );
+      setImages((prev) => [...prev, ...uploaded]);
+      showToast(`${uploaded.length} gambar berhasil diupload`, "success");
+    } catch (err: unknown) {
+      showToast("Gagal upload gambar: " + (err instanceof Error ? err.message : "error"), "error");
+    } finally {
+      setUploadingImages(false);
+    }
   };
 
   const addAttribute = () => {
@@ -105,7 +135,7 @@ export default function UploadProductPage() {
           setLoadingTerms(prev => ({ ...prev, [globalAttr.id]: true }));
           try {
             const terms = await fetchAll(`products/attributes/${globalAttr.id}/terms`);
-            setTermsCache(prev => ({ ...prev, [globalAttr.id]: terms }));
+            setTermsCache(prev => ({ ...prev, [globalAttr.id]: terms as any[] }));
           } catch (e: any) {
             showToast("Failed to load terms: " + e.message, "error");
           } finally {
@@ -171,7 +201,7 @@ export default function UploadProductPage() {
     }
 
     setLoading(true);
-    showToast("Uploading product...", "loading");
+    setUploadStep(null);
 
     try {
       // 1. Prepare Parent Product payload
@@ -181,7 +211,7 @@ export default function UploadProductPage() {
         sku,
         description: editor?.getHTML() || "",
       };
-      
+
       // Only attach prices if they exist, to prevent "0" defaults
       if (type === 'simple') {
         if (regularPrice) payload.regular_price = regularPrice;
@@ -209,12 +239,21 @@ export default function UploadProductPage() {
         }));
       }
 
+      // Attach uploaded images
+      if (images.length > 0) {
+        payload.images = images.map(img => ({ id: img.id, alt: img.alt }));
+      }
+
       // 2. Create Parent Product
+      setUploadStep("Membuat produk...");
+      showToast("Membuat produk...", "loading");
       const createdProduct = await wooFetch("products", "POST", payload);
       const parentId = createdProduct.id;
 
       // 3. Create Variations if variable
       if (type === 'variable' && variations.length > 0) {
+        setUploadStep(`Membuat ${variations.length} variasi...`);
+        showToast(`Membuat ${variations.length} variasi...`, "loading");
         const createVarsPayload = {
           create: variations.map(v => ({
             regular_price: v.regular_price,
@@ -231,17 +270,22 @@ export default function UploadProductPage() {
         await wooFetch(`products/${parentId}/variations/batch`, "POST", createVarsPayload);
       }
 
-      showToast("Product uploaded successfully!", "success");
-      
+      setUploadStep("Selesai! Mengalihkan ke dashboard...");
+      showToast("Produk berhasil diupload!", "success");
+
+      // Log activity
+      logActivity({ action: "upload_product", product_id: parentId, product_name: name });
+
       // Manually inject into local cache so dashboard is instant
       appendCache("products", createdProduct);
-      
+
       setTimeout(() => {
         window.location.href = "/dashboard";
       }, 1500);
 
     } catch (err: any) {
       showToast(err.message, "error");
+      setUploadStep(null);
     } finally {
       setLoading(false);
     }
@@ -281,14 +325,19 @@ export default function UploadProductPage() {
           <h2 className="text-2xl font-bold text-slate-800">Upload New Product</h2>
           <p className="text-sm text-slate-500 mt-1">Create a new product in your WooCommerce store</p>
         </div>
-        <button 
-          onClick={handleUpload}
-          disabled={loading}
-          className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:shadow-none"
-        >
-          {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-          Publish Product
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={handleUpload}
+            disabled={loading}
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:shadow-none"
+          >
+            {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+            Publish Product
+          </button>
+          {uploadStep && (
+            <p className="text-xs text-blue-600 font-medium animate-pulse">{uploadStep}</p>
+          )}
+        </div>
       </div>
 
       <div className="p-6 max-w-4xl mx-auto w-full space-y-6">
@@ -304,7 +353,7 @@ export default function UploadProductPage() {
                 type="text" 
                 value={name} onChange={e => setName(e.target.value)}
                 className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
-                placeholder="Awesome T-Shirt"
+                placeholder="MOTHERBOARD XYZ"
               />
             </div>
             
@@ -314,7 +363,7 @@ export default function UploadProductPage() {
                 type="text" 
                 value={sku} onChange={e => setSku(e.target.value)}
                 className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
-                placeholder="TSHIRT-001"
+                placeholder="MOTHERBOARD-001"
               />
             </div>
 
@@ -373,6 +422,72 @@ export default function UploadProductPage() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* Product Images Section */}
+        <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b border-slate-100 pb-2">
+            Gambar Produk
+          </h3>
+
+          {/* Upload area */}
+          <label className={`flex flex-col items-center justify-center gap-3 w-full py-8 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+            uploadingImages
+              ? "border-blue-300 bg-blue-50"
+              : "border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/50"
+          }`}>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              disabled={uploadingImages}
+              onChange={(e) => e.target.files && handleImageUpload(e.target.files)}
+            />
+            {uploadingImages ? (
+              <>
+                <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
+                <span className="text-sm text-blue-600 font-medium">Mengupload gambar...</span>
+              </>
+            ) : (
+              <>
+                <ImagePlus className="w-8 h-8 text-slate-400" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-slate-600">Klik untuk pilih gambar</p>
+                  <p className="text-xs text-slate-400 mt-1">PNG, JPG, WebP — bisa pilih lebih dari satu</p>
+                </div>
+              </>
+            )}
+          </label>
+
+          {/* Preview grid */}
+          {images.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              {images.map((img, i) => (
+                <div key={img.id} className="relative group rounded-xl overflow-hidden border border-slate-200">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.src}
+                    alt={img.alt}
+                    className="w-full h-24 object-cover"
+                  />
+                  {i === 0 && (
+                    <span className="absolute top-1 left-1 text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-semibold">
+                      Featured
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setImages((prev) => prev.filter((x) => x.id !== img.id))}
+                    className="absolute top-1 right-1 p-0.5 bg-red-500 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                    title="Hapus gambar"
+                  >
+                    <XIcon className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Product Data Section */}

@@ -3,19 +3,27 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StoreProfile, getStores, saveStore, setActiveStore, removeStore } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
 import { Store, Trash2, Plus, ArrowRight } from "lucide-react";
 
 export default function ConnectStorePage() {
   const router = useRouter();
   const [stores, setStores] = useState<StoreProfile[]>([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [formData, setFormData] = useState({ name: "", url: "", ck: "", cs: "" });
+  const [formData, setFormData] = useState({ name: "", url: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setStores(getStores());
-  }, []);
+    // Redirect to login if not authenticated
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.replace("/login");
+      } else {
+        setStores(getStores());
+      }
+    });
+  }, [router]);
 
   const handleConnect = async (store: StoreProfile) => {
     setActiveStore(store);
@@ -29,7 +37,7 @@ export default function ConnectStorePage() {
 
     try {
       // Basic validation
-      if (!formData.name || !formData.url || !formData.ck || !formData.cs) {
+      if (!formData.name || !formData.url) {
         throw new Error("All fields are required");
       }
       
@@ -43,30 +51,25 @@ export default function ConnectStorePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          url: storeUrl,
-          ck: formData.ck,
-          cs: formData.cs,
-          endpoint: "system_status" // A lightweight endpoint to test, or just 'products' with per_page=1
+          endpoint: "products",
+          method: "GET",
+          params: { per_page: 1 },
         })
       });
-
-      const result = await response.json();
       
-      // We test 'products' if system_status fails or just allow it if it doesn't return 401/403
       if (!response.ok && response.status === 401) {
-        throw new Error("Invalid Consumer Key or Secret");
+        throw new Error("Server credentials are invalid. Check .env.local values.");
       }
+      if (!response.ok) throw new Error("Failed to connect using server environment credentials.");
 
       const newStore = saveStore({
         name: formData.name,
         url: storeUrl,
-        ck: formData.ck,
-        cs: formData.cs
       });
 
       setStores(getStores());
       setShowAdd(false);
-      setFormData({ name: "", url: "", ck: "", cs: "" });
+      setFormData({ name: "", url: "" });
       
       // Auto connect to new store
       handleConnect(newStore);
@@ -181,32 +184,8 @@ export default function ConnectStorePage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Consumer Key</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.ck}
-                  onChange={e => setFormData({...formData, ck: e.target.value})}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-900"
-                  placeholder="ck_xxxxxxxxxxxxxxxxxxxx"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Consumer Secret</label>
-                <input
-                  type="password"
-                  required
-                  value={formData.cs}
-                  onChange={e => setFormData({...formData, cs: e.target.value})}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-900"
-                  placeholder="cs_xxxxxxxxxxxxxxxxxxxx"
-                />
-              </div>
-
               <div className="bg-blue-50 text-blue-800 text-xs p-3 rounded-lg border border-blue-100 mt-2 leading-relaxed">
-                <strong>Privacy Note:</strong> Your credentials are saved securely in your browser's local storage and are never sent to any server other than your own store.
+                <strong>Security Note:</strong> API credentials are read only from server environment variables and never sent from the browser.
               </div>
 
               <button

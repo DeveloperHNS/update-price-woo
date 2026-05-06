@@ -1,5 +1,3 @@
-import { getActiveStore } from './store';
-
 export interface WooProduct {
   id: number;
   name: string;
@@ -7,6 +5,7 @@ export interface WooProduct {
   type: 'simple' | 'variable' | 'grouped' | 'external' | string;
   regular_price: string;
   stock_status?: 'instock' | 'outofstock' | string;
+  status?: 'publish' | 'private' | 'draft' | string;
   parent?: number;
 }
 
@@ -18,21 +17,16 @@ export interface WooVariation {
   attributes?: Array<{ id?: number; name: string; option: string }>;
 }
 
-export async function wooFetch(endpoint: string, method = 'GET', data?: any, params?: any) {
-  const store = getActiveStore();
-  if (!store) {
-    throw new Error('No active store connected');
-  }
+type WooParams = Record<string, string | number | boolean>;
+type WooResponse = Record<string, unknown> | Array<Record<string, unknown>>;
 
+export async function wooFetch(endpoint: string, method = 'GET', data?: unknown, params?: WooParams) {
   const response = await fetch('/api/woo', {
     method: 'POST', // The proxy route is a POST request
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      url: store.url,
-      ck: store.ck,
-      cs: store.cs,
       endpoint,
       method,
       data,
@@ -49,7 +43,7 @@ export async function wooFetch(endpoint: string, method = 'GET', data?: any, par
   return result;
 }
 
-const globalCache: Record<string, { data: any, timestamp: number }> = {};
+const globalCache: Record<string, { data: unknown, timestamp: number }> = {};
 const PENDING_PRODUCT_KEY = 'woo_pending_product';
 
 export function clearCache(endpointPrefix?: string) {
@@ -62,18 +56,17 @@ export function clearCache(endpointPrefix?: string) {
   }
 }
 
-export async function fetchAll(endpoint: string, extraParams: any = {}, forceRefresh = false) {
-  const store = getActiveStore();
-  const cacheKey = `${store?.id}_${endpoint}_${JSON.stringify(extraParams)}`;
+export async function fetchAll(endpoint: string, extraParams: WooParams = {}, forceRefresh = false) {
+  const cacheKey = `${endpoint}_${JSON.stringify(extraParams)}`;
 
   if (!forceRefresh && globalCache[cacheKey]) {
     return globalCache[cacheKey].data;
   }
 
-  let all: any[] = [];
+  let all: WooResponse[] = [];
   let pg = 1;
   while (true) {
-    const batch = await wooFetch(endpoint, 'GET', undefined, { per_page: 100, page: pg, ...extraParams });
+    const batch = await wooFetch(endpoint, 'GET', undefined, { per_page: 100, page: pg, ...extraParams }) as WooResponse[];
     all = all.concat(batch);
     if (batch.length < 100) break;
     pg++;
@@ -83,9 +76,8 @@ export async function fetchAll(endpoint: string, extraParams: any = {}, forceRef
   return all;
 }
 
-export function appendCache(endpointPrefix: string, newItem: any) {
-  const store = getActiveStore();
-  if (!store || typeof window === 'undefined') return;
+export function appendCache(endpointPrefix: string, newItem: unknown) {
+  if (typeof window === 'undefined') return;
   
   if (endpointPrefix === 'products') {
     // Handoff for dashboard page 1 without reloading full catalog.
@@ -93,7 +85,7 @@ export function appendCache(endpointPrefix: string, newItem: any) {
   }
 
   for (const key in globalCache) {
-    if (!key.includes(`${store.id}_${endpointPrefix}`)) continue;
+    if (!key.includes(`${endpointPrefix}`)) continue;
     if (Array.isArray(globalCache[key].data)) {
       globalCache[key].data = [newItem, ...globalCache[key].data];
     }

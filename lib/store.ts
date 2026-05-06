@@ -2,8 +2,6 @@ export interface StoreProfile {
   id: string;
   name: string;
   url: string;
-  ck: string;
-  cs: string;
 }
 
 const STORAGE_KEY = 'woo_stores';
@@ -37,14 +35,16 @@ export function removeStore(id: string) {
 
 export function getActiveStore(): StoreProfile | null {
   if (typeof window === 'undefined') return null;
-  const data = localStorage.getItem(ACTIVE_STORE_KEY);
+  // Use sessionStorage so the active store is cleared when the browser is closed.
+  const data = sessionStorage.getItem(ACTIVE_STORE_KEY);
   return data ? JSON.parse(data) : null;
 }
 
 export function setActiveStore(store: StoreProfile | null) {
+  // Use sessionStorage so the active store is cleared when the browser is closed.
   if (store) {
-    localStorage.setItem(ACTIVE_STORE_KEY, JSON.stringify(store));
+    sessionStorage.setItem(ACTIVE_STORE_KEY, JSON.stringify(store));
   } else {
-    localStorage.removeItem(ACTIVE_STORE_KEY);
+    sessionStorage.removeItem(ACTIVE_STORE_KEY);
   }
 }

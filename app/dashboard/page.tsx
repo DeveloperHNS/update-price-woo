@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
-import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check } from "lucide-react";
+import { logActivity } from "@/lib/activity-log";
+import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock } from "lucide-react";
 
 type WooCategory = {
   id: number;
@@ -36,6 +37,9 @@ export default function ManageProducts() {
   const [varCache, setVarCache] = useState<Record<number, WooVariation[]>>({});
   const [varLoading, setVarLoading] = useState<Set<number>>(new Set());
   const [updatingStock, setUpdatingStock] = useState<Set<number>>(new Set());
+  // Per-variation stock update: key = "${parentId}-${varId}"
+  const [updatingVarStock, setUpdatingVarStock] = useState<Set<string>>(new Set());
+  const [updatingStatus, setUpdatingStatus] = useState<Set<number>>(new Set());
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
@@ -79,7 +83,7 @@ export default function ManageProducts() {
           page,
           orderby: "date",
           order: "desc",
-          _fields: "id,name,sku,type,regular_price,parent,stock_status",
+          _fields: "id,name,sku,type,regular_price,parent,stock_status,status",
         };
         if (debouncedSearch) params.search = debouncedSearch;
         if (selCatId !== null) params.category = selCatId;
@@ -193,10 +197,13 @@ export default function ManageProducts() {
         setVarCache((prev) => ({ ...prev, [product.id]: updatedVariations }));
         const nextParentStatus = deriveParentStockFromVariations(updatedVariations);
         setProducts((prev) => prev.map((item) => item.id === product.id ? { ...item, stock_status: nextParentStatus } : item));
+        logActivity({ action: "toggle_stock", product_id: product.id, product_name: product.name, old_value: deriveParentStockFromVariations(variations), new_value: targetStatus });
       } else {
-        const targetStatus: StockState = getStockState(product.stock_status) === "instock" ? "outofstock" : "instock";
+        const prevStatus = getStockState(product.stock_status);
+        const targetStatus: StockState = prevStatus === "instock" ? "outofstock" : "instock";
         await wooFetch(`products/${product.id}`, "PATCH", { stock_status: targetStatus });
         setProducts((prev) => prev.map((item) => item.id === product.id ? { ...item, stock_status: targetStatus } : item));
+        logActivity({ action: "toggle_stock", product_id: product.id, product_name: product.name, old_value: prevStatus, new_value: targetStatus });
       }
       showToast("Stock updated", "success");
     } catch (err: unknown) {
@@ -208,6 +215,55 @@ export default function ManageProducts() {
         next.delete(product.id);
         return next;
       });
+    }
+  };
+
+  const toggleVariationStock = async (product: WooProduct, v: WooVariation) => {
+    const key = `${product.id}-${v.id}`;
+    if (updatingVarStock.has(key)) return;
+    setUpdatingVarStock((prev) => new Set(prev).add(key));
+    showToast("Updating stock...", "loading");
+    try {
+      const prevStatus = v.stock_status === "outofstock" ? "outofstock" : "instock";
+      const target: StockState = prevStatus === "instock" ? "outofstock" : "instock";
+      await wooFetch(`products/${product.id}/variations/${v.id}`, "PATCH", { stock_status: target });
+      const updatedVars = (varCache[product.id] || []).map((x) =>
+        x.id === v.id ? { ...x, stock_status: target } : x
+      );
+      setVarCache((prev) => ({ ...prev, [product.id]: updatedVars }));
+      // Recalculate and sync parent stock
+      const newParentStock = deriveParentStockFromVariations(updatedVars);
+      setProducts((prev) =>
+        prev.map((p) => p.id === product.id ? { ...p, stock_status: newParentStock } : p)
+      );
+      logActivity({ action: "toggle_stock", product_id: v.id, product_name: `${product.name} — Variasi #${v.id}`, old_value: prevStatus, new_value: target });
+      showToast("Stock variasi diperbarui", "success");
+    } catch (err: unknown) {
+      showToast("Gagal: " + (err instanceof Error ? err.message : "error"), "error");
+    } finally {
+      setUpdatingVarStock((prev) => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
+    }
+  };
+
+  const toggleProductStatus = async (product: WooProduct) => {
+    if (updatingStatus.has(product.id)) return;
+    setUpdatingStatus(prev => new Set(prev).add(product.id));
+    showToast("Mengubah status...", "loading");
+    try {
+      const prev = product.status === 'private' ? 'private' : 'publish';
+      const target = prev === 'publish' ? 'private' : 'publish';
+      await wooFetch(`products/${product.id}`, "PATCH", { status: target });
+      setProducts(prevList => prevList.map(item => item.id === product.id ? { ...item, status: target } : item));
+      logActivity({ action: "toggle_status", product_id: product.id, product_name: product.name, old_value: prev, new_value: target });
+      showToast(target === 'publish' ? "Produk dipublish" : "Produk diprivatkan", "success");
+    } catch (err: unknown) {
+      showToast("Gagal: " + (err instanceof Error ? err.message : "error"), "error");
+    } finally {
+      setUpdatingStatus(prev => { const n = new Set(prev); n.delete(product.id); return n; });
     }
   };
 
@@ -236,15 +292,15 @@ export default function ManageProducts() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-4 p-4 border-b border-slate-200 bg-slate-50 shrink-0">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-3 p-3 border-b border-slate-200 bg-slate-50 shrink-0">
+        <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search name, SKU (fuzzy)..." 
+          <input
+            type="text"
+            placeholder="Search name, SKU..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm w-64 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            className="pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
           />
         </div>
 
@@ -314,6 +370,7 @@ export default function ManageProducts() {
 
       {/* Table Area */}
       <div className="flex-1 overflow-auto bg-white">
+
         {loading ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-500">
             <RefreshCw className="w-8 h-8 animate-spin mb-4 text-blue-500" />
@@ -329,30 +386,34 @@ export default function ManageProducts() {
             <p>No products found matching your criteria.</p>
           </div>
         ) : (
-          <table className="w-full text-sm text-left">
+          <table className="w-full text-sm text-left min-w-[600px]">
             <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="w-10 px-4 py-3"></th>
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">SKU</th>
-                <th className="px-4 py-3">Product Name</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Stock</th>
-                <th className="px-4 py-3">Regular Price</th>
-                <th className="px-4 py-3">Action</th>
+                <th className="w-10 px-3 py-3"></th>
+                <th className="px-3 py-3 hidden md:table-cell">ID</th>
+                <th className="px-3 py-3 hidden sm:table-cell">SKU</th>
+                <th className="px-3 py-3">Product Name</th>
+                <th className="px-3 py-3 hidden md:table-cell">Type</th>
+                <th className="px-3 py-3">Stock</th>
+                <th className="px-3 py-3 hidden sm:table-cell">Regular Price</th>
+                <th className="px-3 py-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {products.map(p => (
-                <ProductRow 
-                  key={p.id} 
-                  product={p} 
+                <ProductRow
+                  key={p.id}
+                  product={p}
                   expanded={expanded.has(p.id)}
                   onToggleExpand={() => toggleExpand(p.id)}
                   varCache={varCache[p.id] || []}
                   isLoadingVars={varLoading.has(p.id)}
                   isUpdatingStock={updatingStock.has(p.id)}
                   onToggleStock={() => toggleProductStock(p)}
+                  isUpdatingStatus={updatingStatus.has(p.id)}
+                  onToggleStatus={() => toggleProductStatus(p)}
+                  updatingVarStock={updatingVarStock}
+                  onToggleVariationStock={(v) => toggleVariationStock(p, v)}
                   onUpdate={(id: number, field: string, val: string, type: string, parentId?: number) => {
                     // We'll pass a function to update local state after successful PUT
                     if (type === 'variation' && parentId) {
@@ -426,7 +487,7 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, onUpdate, showToast }: {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, updatingVarStock, onToggleVariationStock, onUpdate, showToast }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -434,68 +495,99 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   isLoadingVars: boolean;
   isUpdatingStock: boolean;
   onToggleStock: () => void;
+  isUpdatingStatus: boolean;
+  onToggleStatus: () => void;
+  updatingVarStock: Set<string>;
+  onToggleVariationStock: (v: WooVariation) => void;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success"|"error"|"loading") => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
+  const isPublished = p.status !== 'private';
 
   return (
     <>
       <tr className="hover:bg-slate-50 group">
-        <td className="px-4 py-3">
+        <td className="px-3 py-3">
           {isVar && (
-            <button 
+            <button
               onClick={onToggleExpand}
-              className="p-1 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded transition-colors"
             >
               <ChevronRight className={`w-4 h-4 transition-transform ${expanded ? "rotate-90" : ""}`} />
             </button>
           )}
         </td>
-        <td className="px-4 py-3 text-slate-500 font-mono text-xs">#{p.id}</td>
-        <td className="px-4 py-3">
-          <EditableCell id={p.id} field="sku" val={p.sku} type="text" prodType="simple" onUpdate={onUpdate} showToast={showToast} />
+        <td className="px-3 py-3 text-slate-500 font-mono text-xs hidden md:table-cell">#{p.id}</td>
+        <td className="px-3 py-3 hidden sm:table-cell">
+          <EditableCell id={p.id} field="sku" val={p.sku} type="text" prodType="simple" productName={p.name} onUpdate={onUpdate} showToast={showToast} />
         </td>
-        <td className="px-4 py-3 font-medium text-slate-800">
-          <EditableCell id={p.id} field="name" val={p.name} type="text" prodType="simple" onUpdate={onUpdate} showToast={showToast} />
+        <td className="px-3 py-3 font-medium text-slate-800">
+          <EditableCell id={p.id} field="name" val={p.name} type="text" prodType="simple" productName={p.name} onUpdate={onUpdate} showToast={showToast} />
+          {/* Show type + SKU inline on mobile */}
+          <div className="sm:hidden flex items-center gap-1.5 mt-0.5">
+            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${isVar ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+              {isVar ? 'Var' : 'Simple'}
+            </span>
+            {p.sku && <span className="text-[10px] text-slate-400 font-mono">{p.sku}</span>}
+          </div>
         </td>
-        <td className="px-4 py-3">
+        <td className="px-3 py-3 hidden md:table-cell">
           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
             isVar ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
           }`}>
             {isVar ? 'Variable' : 'Simple'}
           </span>
         </td>
-        <td className="px-4 py-3">
+        <td className="px-3 py-3">
           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
             stockStatus === "instock" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
           }`}>
             {stockStatus}
           </span>
         </td>
-        <td className="px-4 py-3 font-mono">
-          {isVar ? <span className="text-slate-400 text-xs italic">— per variation</span> : 
-            <EditableCell id={p.id} field="regular_price" val={p.regular_price} type="number" prodType="simple" prefix="Rp " onUpdate={onUpdate} showToast={showToast} />}
+        <td className="px-3 py-3 font-mono hidden sm:table-cell">
+          {isVar ? <span className="text-slate-400 text-xs italic">— per variation</span> :
+            <EditableCell id={p.id} field="regular_price" val={p.regular_price} type="number" prodType="simple" prefix="Rp " productName={p.name} onUpdate={onUpdate} showToast={showToast} />}
         </td>
-        <td className="px-4 py-3">
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleStock(); }}
-            disabled={isUpdatingStock}
-            role="switch"
-            aria-checked={stockStatus === "instock"}
-            aria-label={`Toggle stock for ${p.name}`}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              stockStatus === "instock" ? "bg-green-500" : "bg-red-500"
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                stockStatus === "instock" ? "translate-x-6" : "translate-x-1"
+        <td className="px-3 py-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Stock toggle */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleStock(); }}
+              disabled={isUpdatingStock}
+              role="switch"
+              aria-checked={stockStatus === "instock"}
+              aria-label={`Toggle stock for ${p.name}`}
+              title={stockStatus === "instock" ? "Stok: Ada — klik untuk Habis" : "Stok: Habis — klik untuk Ada"}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                stockStatus === "instock" ? "bg-green-500" : "bg-red-400"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${stockStatus === "instock" ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+            {/* Publish / Private toggle */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleStatus(); }}
+              disabled={isUpdatingStatus}
+              title={isPublished ? "Status: Publish — klik untuk Private" : "Status: Private — klik untuk Publish"}
+              aria-label={isPublished ? `Private ${p.name}` : `Publish ${p.name}`}
+              className={`inline-flex items-center justify-center h-7 w-7 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                isPublished
+                  ? "bg-blue-100 text-blue-600 hover:bg-blue-200"
+                  : "bg-slate-200 text-slate-500 hover:bg-slate-300"
               }`}
-            />
-          </button>
-          {isUpdatingStock && <span className="ml-2 text-[10px] text-slate-500">Updating...</span>}
+            >
+              {isUpdatingStatus
+                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                : isPublished
+                  ? <Globe className="w-3.5 h-3.5" />
+                  : <Lock className="w-3.5 h-3.5" />
+              }
+            </button>
+          </div>
+          {isUpdatingStock && <span className="text-[10px] text-slate-400 mt-0.5 block">Updating...</span>}
         </td>
       </tr>
 
@@ -509,35 +601,49 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
         ) : varCache.length > 0 ? (
           varCache.map((v) => (
             <tr key={v.id} className="bg-slate-50 border-l-4 border-l-purple-300 hover:bg-slate-100">
-              <td className="px-4 py-2"></td>
-              <td className="px-4 py-2 text-slate-400 font-mono text-xs">#{v.id}</td>
-              <td className="px-4 py-2">
-                <EditableCell id={v.id} parentId={p.id} field="sku" val={v.sku} type="text" prodType="variation" onUpdate={onUpdate} showToast={showToast} />
+              <td className="px-3 py-2"></td>
+              <td className="px-3 py-2 text-slate-400 font-mono text-xs hidden md:table-cell">#{v.id}</td>
+              <td className="px-3 py-2 hidden sm:table-cell">
+                <EditableCell id={v.id} parentId={p.id} field="sku" val={v.sku} type="text" prodType="variation" productName={`${p.name} — Variasi #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
               </td>
-              <td className="px-4 py-2 text-sm text-slate-600">
+              <td className="px-3 py-2 text-sm text-slate-600">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-px bg-slate-300"></div>
-                  {v.attributes?.map((a) => `${a.name}: ${a.option}`).join(' • ') || 'Variation'}
+                  <div className="w-3 h-px bg-slate-300 shrink-0"></div>
+                  <span className="truncate">{v.attributes?.map((a) => `${a.name}: ${a.option}`).join(' • ') || 'Variation'}</span>
                 </div>
               </td>
-              <td className="px-4 py-2">
+              <td className="px-3 py-2 hidden md:table-cell">
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-200 text-slate-600 uppercase tracking-wider">
                   Var
                 </span>
               </td>
-              <td className="px-4 py-2">
+              <td className="px-3 py-2">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                  (v.stock_status === "outofstock" ? "outofstock" : "instock") === "instock"
-                    ? "bg-green-100 text-green-800"
-                    : "bg-red-100 text-red-800"
+                  v.stock_status !== "outofstock" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
                 }`}>
                   {v.stock_status === "outofstock" ? "outofstock" : "instock"}
                 </span>
               </td>
-              <td className="px-4 py-2 font-mono">
-                <EditableCell id={v.id} parentId={p.id} field="regular_price" val={v.regular_price} type="number" prodType="variation" prefix="Rp " onUpdate={onUpdate} showToast={showToast} />
+              <td className="px-3 py-2 font-mono hidden sm:table-cell">
+                <EditableCell id={v.id} parentId={p.id} field="regular_price" val={v.regular_price} type="number" prodType="variation" prefix="Rp " productName={`${p.name} — Variasi #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
               </td>
-              <td className="px-4 py-2"></td>
+              <td className="px-3 py-2">
+                <button
+                  onClick={() => onToggleVariationStock(v)}
+                  disabled={updatingVarStock.has(`${p.id}-${v.id}`)}
+                  role="switch"
+                  aria-checked={v.stock_status !== "outofstock"}
+                  aria-label={`Toggle stock variasi #${v.id}`}
+                  title={v.stock_status !== "outofstock" ? "Stok Ada — klik Habis" : "Stok Habis — klik Ada"}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    v.stock_status !== "outofstock" ? "bg-green-500" : "bg-red-400"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    v.stock_status !== "outofstock" ? "translate-x-6" : "translate-x-1"
+                  }`} />
+                </button>
+              </td>
             </tr>
           ))
         ) : (
@@ -552,7 +658,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   );
 }
 
-function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", onUpdate, showToast }: {
+function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", productName = "", onUpdate, showToast }: {
   id: number;
   parentId?: number;
   field: "sku" | "name" | "regular_price";
@@ -560,6 +666,7 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", o
   type: "text" | "number";
   prodType: "simple" | "variation";
   prefix?: string;
+  productName?: string;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success"|"error"|"loading") => void;
 }) {
@@ -587,6 +694,8 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", o
         
       await wooFetch(endpoint, 'PUT', { [field]: value });
       onUpdate(id, field, value, prodType, parentId);
+      const actionMap: Record<string, string> = { sku: "update_sku", name: "update_name", regular_price: "update_price" };
+      logActivity({ action: actionMap[field] ?? `update_${field}`, product_id: id, product_name: productName || undefined, field, old_value: val || "", new_value: value });
       showToast("Saved successfully!", "success");
       setEditing(false);
     } catch (err: any) {
