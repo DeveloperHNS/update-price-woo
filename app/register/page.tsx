@@ -1,17 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Store, Eye, EyeOff, UserPlus, ArrowLeft } from "lucide-react";
+import { Store, Eye, EyeOff, UserPlus, ArrowLeft, CheckCircle2, Clock } from "lucide-react";
 import Link from "next/link";
-import type { PicCategory } from "@/lib/profile";
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [picCategory, setPicCategory] = useState<PicCategory | "">("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -23,34 +19,55 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
 
-    if (!fullName.trim()) { setError("Nama lengkap wajib diisi."); return; }
-    if (!email.trim()) { setError("Email wajib diisi."); return; }
-    if (!picCategory) { setError("Pilih kategori PIC terlebih dahulu."); return; }
-    if (password.length < 8) { setError("Password minimal 8 karakter."); return; }
-    if (password !== confirm) { setError("Konfirmasi password tidak cocok."); return; }
+    // Validasi client-side
+    if (!fullName.trim()) return setError("Nama lengkap wajib diisi.");
+    if (!email.trim()) return setError("Email wajib diisi.");
+    if (password.length < 8) return setError("Password minimal 8 karakter.");
+    if (password !== confirm) return setError("Konfirmasi password tidak cocok.");
 
     setLoading(true);
     try {
-      // 1. Sign up via Supabase Auth
-      const { data, error: signUpErr } = await supabase.auth.signUp({ email, password });
+      // 1. Cek apakah email sudah terdaftar (anti-spam 1 email = 1 akun)
+      const checkRes = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const checkData = await checkRes.json();
+      if (!checkRes.ok) throw new Error(checkData.error);
+
+      if (checkData.exists) {
+        setError(
+          "Email ini sudah terdaftar. Jika kamu sudah mendaftar sebelumnya, " +
+          "tunggu persetujuan admin atau hubungi administrator."
+        );
+        return;
+      }
+
+      // 2. Daftar via Supabase Auth
+      const { data, error: signUpErr } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
       if (signUpErr) throw signUpErr;
 
       const userId = data.user?.id;
-      if (!userId) throw new Error("Gagal membuat akun.");
+      if (!userId) throw new Error("Gagal membuat akun. Coba lagi.");
 
-      // 2. Insert profile with status = 'pending'
+      // 3. Simpan profil dengan status pending — kategori di-assign admin saat approve
       const { error: profileErr } = await supabase.from("profiles").upsert({
         id: userId,
         full_name: fullName.trim(),
         role: "pic",
         status: "pending",
-        pic_category: picCategory || null,
+        pic_category: null,
       });
       if (profileErr) throw profileErr;
 
-      // 3. Sign out immediately — must wait for admin approval
+      // 4. Langsung logout — harus tunggu approve admin dulu
       await supabase.auth.signOut();
       setSuccess(true);
+
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Gagal mendaftar, coba lagi.");
     } finally {
@@ -58,23 +75,40 @@ export default function RegisterPage() {
     }
   };
 
+  // ── Layar sukses ────────────────────────────────────────────────────────────
   if (success) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <UserPlus className="w-8 h-8 text-green-600" />
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
+            <CheckCircle2 className="w-9 h-9 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Pendaftaran Terkirim!</h2>
-          <p className="text-slate-500 text-sm mb-1">
-            Akun kamu sedang menunggu persetujuan admin.
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Pendaftaran Berhasil!</h2>
+          <p className="text-slate-500 text-sm mb-4">
+            Akun kamu sedang menunggu verifikasi dan persetujuan dari admin.
           </p>
+
+          {/* Step indicator */}
+          <div className="flex items-center justify-center gap-2 mb-6 text-xs text-slate-400">
+            <span className="flex items-center gap-1 text-green-600 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Daftar
+            </span>
+            <span className="w-6 h-px bg-slate-200" />
+            <span className="flex items-center gap-1 text-amber-500 font-medium">
+              <Clock className="w-3.5 h-3.5" /> Menunggu Approval
+            </span>
+            <span className="w-6 h-px bg-slate-200" />
+            <span className="flex items-center gap-1">
+              <UserPlus className="w-3.5 h-3.5" /> Bisa Login
+            </span>
+          </div>
+
           <p className="text-slate-400 text-xs mb-6">
-            Kamu akan dihubungi setelah akun diaktifkan.
+            Kamu akan dihubungi setelah akun diaktifkan oleh admin.
           </p>
           <Link
             href="/login"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Kembali ke Login
@@ -84,56 +118,56 @@ export default function RegisterPage() {
     );
   }
 
+  // ── Form Registrasi ──────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-600 rounded-2xl mb-4 shadow-lg shadow-blue-500/30">
             <Store className="w-7 h-7 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">Buat Akun</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Buat Akun PIC</h1>
           <p className="text-slate-500 text-sm mt-1">Daftar dan tunggu persetujuan admin</p>
         </div>
 
+        {/* Info banner */}
+        <div className="flex items-start gap-2.5 p-3 bg-blue-50 border border-blue-100 rounded-xl mb-5 text-xs text-blue-700">
+          <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            Setelah mendaftar, akun kamu akan diverifikasi oleh admin sebelum bisa digunakan.
+            Setiap email hanya dapat mendaftar <strong>1 kali</strong>.
+          </span>
+        </div>
+
         <form onSubmit={handleRegister} className="space-y-4">
+
           {/* Full Name */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Nama Lengkap</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Nama Lengkap <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
               value={fullName}
               onChange={e => setFullName(e.target.value)}
-              placeholder="Nama Lengkap"
+              placeholder="Nama sesuai identitas"
               required
               className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
             />
           </div>
 
-          {/* PIC Category */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Kategori PIC</label>
-            <select
-              value={picCategory}
-              onChange={e => setPicCategory(e.target.value as PicCategory)}
-              required
-              className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
-            >
-              <option value="" disabled>Pilih kategori...</option>
-              <option value="komponen">Komponen</option>
-              <option value="aksesoris">Aksesoris</option>
-              <option value="laptop">Laptop &amp; Printer</option>
-            </select>
-          </div>
-
           {/* Email */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Email Kantor <span className="text-red-500">*</span>
+            </label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="email@domain.com"
+              placeholder="email@perusahaan.com"
               required
               className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
             />
@@ -141,13 +175,15 @@ export default function RegisterPage() {
 
           {/* Password */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Password <span className="text-red-500">*</span>
+            </label>
             <div className="relative">
               <input
                 type={showPw ? "text" : "password"}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Min. 8 karakter"
+                placeholder="Minimal 8 karakter"
                 required
                 className="w-full px-4 py-3 pr-12 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
               />
@@ -163,7 +199,9 @@ export default function RegisterPage() {
 
           {/* Confirm Password */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Konfirmasi Password</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Konfirmasi Password <span className="text-red-500">*</span>
+            </label>
             <input
               type={showPw ? "text" : "password"}
               value={confirm}
@@ -171,20 +209,27 @@ export default function RegisterPage() {
               placeholder="Ulangi password"
               required
               className={`w-full px-4 py-3 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-slate-50 focus:bg-white ${
-                confirm && confirm !== password ? 'border-red-400 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                confirm && confirm !== password
+                  ? "border-red-400 focus:border-red-500"
+                  : "border-slate-300 focus:border-blue-500"
               }`}
             />
+            {confirm && confirm !== password && (
+              <p className="text-xs text-red-500 mt-1">Password tidak cocok</p>
+            )}
           </div>
 
+          {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-              <span>⚠️</span> {error}
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+              <span className="shrink-0">⚠️</span>
+              <span>{error}</span>
             </div>
           )}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (!!confirm && confirm !== password)}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
           >
             {loading ? (
