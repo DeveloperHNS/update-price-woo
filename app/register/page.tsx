@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { Store, Eye, EyeOff, UserPlus, ArrowLeft, CheckCircle2, Clock } from "lucide-react";
 import Link from "next/link";
 
@@ -19,64 +18,24 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
 
-    // Validasi client-side
     if (!fullName.trim()) return setError("Nama lengkap wajib diisi.");
-    if (!email.trim()) return setError("Email wajib diisi.");
+    if (!email.trim())    return setError("Email wajib diisi.");
     if (password.length < 8) return setError("Password minimal 8 karakter.");
     if (password !== confirm) return setError("Konfirmasi password tidak cocok.");
 
     setLoading(true);
     try {
-      // 1. Cek apakah email sudah terdaftar (anti-spam 1 email = 1 akun)
-      const checkRes = await fetch("/api/auth/check-email", {
+      // Semua proses di server-side (service role) — bypass RLS, atomic, aman
+      const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ fullName: fullName.trim(), email: email.trim(), password }),
       });
-      const checkData = await checkRes.json();
-      if (!checkRes.ok) throw new Error(checkData.error);
-
-      if (checkData.exists) {
-        setError(
-          "Email ini sudah terdaftar. Jika kamu sudah mendaftar sebelumnya, " +
-          "tunggu persetujuan admin atau hubungi administrator."
-        );
-        return;
-      }
-
-      // 2. Daftar via Supabase Auth
-      const { data, error: signUpErr } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-      });
-      if (signUpErr) throw signUpErr;
-
-      const userId = data.user?.id;
-      if (!userId) throw new Error("Gagal membuat akun. Coba lagi.");
-
-      // 3. Simpan profil dengan status pending — kategori di-assign admin saat approve
-      const { error: profileErr } = await supabase.from("profiles").upsert({
-        id: userId,
-        full_name: fullName.trim(),
-        role: "pic",
-        status: "pending",
-        pic_category: null,
-      });
-      if (profileErr) throw profileErr;
-
-      // 4. Langsung logout — harus tunggu approve admin dulu
-      await supabase.auth.signOut();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       setSuccess(true);
-
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "";
-      if (msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("email rate")) {
-        setError("Terlalu banyak percobaan pendaftaran. Coba lagi beberapa menit lagi.");
-      } else if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("already been registered")) {
-        setError("Email ini sudah terdaftar. Tunggu persetujuan admin atau hubungi administrator.");
-      } else {
-        setError(msg || "Gagal mendaftar, coba lagi.");
-      }
+      setError(err instanceof Error ? err.message : "Gagal mendaftar, coba lagi.");
     } finally {
       setLoading(false);
     }
@@ -136,6 +95,7 @@ export default function RegisterPage() {
             <Store className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-slate-800">Buat Akun PIC</h1>
+          
           <p className="text-slate-500 text-sm mt-1">Daftar dan tunggu persetujuan admin</p>
         </div>
 

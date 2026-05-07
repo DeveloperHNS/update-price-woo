@@ -35,7 +35,7 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
       id: user.id,
       email: user.email ?? "",
       role: (profile?.role as UserRole) ?? "pic",
-      status: (profile?.status as UserStatus) ?? "active",
+      status: (profile?.status as UserStatus) ?? "pending",
       full_name: profile?.full_name ?? null,
       pic_category: (profile?.pic_category as PicCategory) ?? null,
     };
