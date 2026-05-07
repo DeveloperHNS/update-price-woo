@@ -39,8 +39,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { name: "Manage Products", href: "/dashboard", icon: LayoutDashboard },
     { name: "Upload Product", href: "/dashboard/upload", icon: UploadCloud },
-    // Only show Activity Logs to all, but admins see all users' logs
-    { name: "Activity Logs", href: "/dashboard/logs", icon: ClipboardList },
+    // Activity Logs — hanya admin yang bisa lihat
+    ...(isAdmin ? [{ name: "Activity Logs", href: "/dashboard/logs", icon: ClipboardList }] : []),
     // Admin-only: user management
     ...(isAdmin ? [{ name: "Manajemen User", href: "/dashboard/admin/users", icon: Users }] : []),
   ];
@@ -121,12 +121,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               >
                 <item.icon className={`w-5 h-5 ${isActive ? "text-blue-200" : "text-slate-400"}`} />
                 <span className="flex-1">{item.name}</span>
-                {/* Admin badge on Activity Logs */}
-                {item.href === "/dashboard/logs" && isAdmin && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-500 text-white rounded uppercase tracking-wide">
-                    All
-                  </span>
-                )}
               </Link>
             );
           })}
@@ -137,18 +131,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* User email + role badge */}
           {profile && (
             <div className="flex items-center gap-2.5 px-3 py-2.5 mb-2 bg-slate-800 rounded-xl">
-              <div className={`p-1.5 rounded-lg ${isAdmin ? "bg-amber-500/20" : "bg-slate-700"}`}>
+              <div className={`p-1.5 rounded-lg ${isAdmin ? "bg-amber-500/20" : "bg-blue-500/20"}`}>
                 {isAdmin
                   ? <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  : <User className="w-4 h-4 text-slate-400" />
+                  : <User className="w-4 h-4 text-blue-400" />
                 }
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-white font-medium truncate" title={profile.email}>
                   {profile.full_name || profile.email.split("@")[0]}
                 </div>
-                <div className={`text-[10px] font-semibold uppercase tracking-wider ${isAdmin ? "text-amber-400" : "text-slate-500"}`}>
-                  {isAdmin ? "Admin" : "User"}
+                <div className={`text-[10px] font-semibold uppercase tracking-wider ${isAdmin ? "text-amber-400" : "text-blue-400"}`}>
+                  {isAdmin ? "Admin" : `PIC${profile.pic_category ? ` · ${profile.pic_category}` : ""}`}
                 </div>
               </div>
             </div>

@@ -2,19 +2,20 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { getCurrentProfile, UserProfile } from "@/lib/profile";
+import { getCurrentProfile, UserProfile, PicCategory } from "@/lib/profile";
 import { useRouter } from "next/navigation";
 import {
   Users, RefreshCw, ShieldCheck, User, CheckCircle2,
-  XCircle, Clock, AlertCircle, Trash2
+  XCircle, Clock, AlertCircle, Trash2, Briefcase
 } from "lucide-react";
 
 type ManagedUser = {
   id: string;
   email: string;
   full_name: string | null;
-  role: "admin" | "user";
+  role: "admin" | "pic";
   status: "pending" | "active" | "rejected";
+  pic_category: PicCategory | null;
   created_at?: string;
 };
 
@@ -23,6 +24,12 @@ const STATUS_LABELS = {
   active:   { label: "Aktif",      color: "bg-green-100 text-green-700 border-green-200",   icon: CheckCircle2 },
   rejected: { label: "Ditolak",    color: "bg-red-100   text-red-700   border-red-200",     icon: XCircle },
 };
+
+const PIC_CATEGORIES: { value: PicCategory; label: string }[] = [
+  { value: "komponen",  label: "Komponen" },
+  { value: "aksesoris", label: "Aksesoris" },
+  { value: "laptop",    label: "Laptop & Printer" },
+];
 
 export default function AdminUsersPage() {
   const router = useRouter();
@@ -50,8 +57,6 @@ export default function AdminUsersPage() {
     setLoading(true);
     setError("");
     try {
-      // Join auth.users via supabase (profiles only, email from auth is separate)
-      // We read profiles + email from supabase auth using service key via API route
       const res = await fetch("/api/admin/users");
       if (!res.ok) throw new Error((await res.json()).error || "Gagal memuat user");
       const data = await res.json();
@@ -65,7 +70,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  const updateUser = async (userId: string, patch: Partial<Pick<ManagedUser, "status" | "role">>) => {
+  const updateUser = async (userId: string, patch: Partial<Pick<ManagedUser, "status" | "role" | "pic_category">>) => {
     setActionLoading(userId);
     try {
       const res = await fetch("/api/admin/users", {
@@ -120,11 +125,9 @@ export default function AdminUsersPage() {
           <div className="flex flex-col items-center justify-center h-64 text-red-500">
             <AlertCircle className="w-8 h-8 mb-2" />
             <p className="text-sm">{error}</p>
-            <p className="text-xs text-slate-400 mt-1">Pastikan API route /api/admin/users sudah ada.</p>
           </div>
         ) : (
           <div className="p-4 space-y-2 max-w-4xl mx-auto">
-            {/* Pending section first */}
             {["pending", "active", "rejected"].map(statusFilter => {
               const filtered = users.filter(u => u.status === statusFilter);
               if (filtered.length === 0) return null;
@@ -138,15 +141,17 @@ export default function AdminUsersPage() {
                     {filtered.map(u => {
                       const busy = actionLoading === u.id;
                       const StatusIcon = cfg.icon;
+                      const isPic = u.role === "pic";
                       return (
-                        <div key={u.id} className="flex items-center gap-3 p-4 bg-white border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+                        <div key={u.id} className="flex items-start gap-3 p-4 bg-white border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
                           {/* Avatar */}
-                          <div className={`p-2 rounded-xl shrink-0 ${u.role === "admin" ? "bg-amber-100" : "bg-slate-100"}`}>
+                          <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${u.role === "admin" ? "bg-amber-100" : "bg-blue-50"}`}>
                             {u.role === "admin"
                               ? <ShieldCheck className="w-5 h-5 text-amber-600" />
-                              : <User className="w-5 h-5 text-slate-500" />
+                              : <Briefcase className="w-5 h-5 text-blue-500" />
                             }
                           </div>
+
                           {/* Info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -157,14 +162,42 @@ export default function AdminUsersPage() {
                                 <StatusIcon className="w-3 h-3" />
                                 {cfg.label}
                               </span>
-                              <span className={`text-[10px] px-1.5 py-px rounded font-semibold ${u.role === "admin" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
-                                {u.role === "admin" ? "Admin" : "User"}
+                              <span className={`text-[10px] px-1.5 py-px rounded font-semibold ${
+                                u.role === "admin"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-blue-50 text-blue-600"
+                              }`}>
+                                {u.role === "admin" ? "Admin" : "PIC"}
                               </span>
+                              {isPic && u.pic_category && (
+                                <span className="text-[10px] px-1.5 py-px rounded font-semibold bg-slate-100 text-slate-600">
+                                  {PIC_CATEGORIES.find(c => c.value === u.pic_category)?.label ?? u.pic_category}
+                                </span>
+                              )}
                             </div>
-                            <p className="text-xs text-slate-400 truncate">{u.email}</p>
+                            <p className="text-xs text-slate-400 truncate mt-0.5">{u.email}</p>
+
+                            {/* PIC Category selector — hanya untuk PIC yang active */}
+                            {isPic && u.status === "active" && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className="text-[11px] text-slate-500">Kategori:</span>
+                                <select
+                                  value={u.pic_category ?? ""}
+                                  disabled={busy}
+                                  onChange={e => updateUser(u.id, { pic_category: e.target.value as PicCategory })}
+                                  className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-blue-400 outline-none disabled:opacity-50"
+                                >
+                                  <option value="" disabled>Pilih kategori...</option>
+                                  {PIC_CATEGORIES.map(c => (
+                                    <option key={c.value} value={c.value}>{c.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                           </div>
+
                           {/* Actions */}
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                             {u.status === "pending" && (
                               <>
                                 <button
@@ -186,9 +219,9 @@ export default function AdminUsersPage() {
                             )}
                             {u.status === "active" && (
                               <>
-                                {u.role !== "admin" && (
+                                {u.role === "pic" && (
                                   <button
-                                    onClick={() => updateUser(u.id, { role: "admin" })}
+                                    onClick={() => updateUser(u.id, { role: "admin", pic_category: null })}
                                     disabled={busy}
                                     className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 text-amber-700 text-xs font-semibold rounded-lg hover:bg-amber-200 disabled:opacity-50 transition-colors"
                                   >
@@ -197,11 +230,11 @@ export default function AdminUsersPage() {
                                 )}
                                 {u.role === "admin" && u.id !== profile.id && (
                                   <button
-                                    onClick={() => updateUser(u.id, { role: "user" })}
+                                    onClick={() => updateUser(u.id, { role: "pic" })}
                                     disabled={busy}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-200 disabled:opacity-50 transition-colors"
+                                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 text-xs font-semibold rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
                                   >
-                                    <User className="w-3 h-3" /> Cabut Admin
+                                    <Briefcase className="w-3 h-3" /> Jadikan PIC
                                   </button>
                                 )}
                                 <button

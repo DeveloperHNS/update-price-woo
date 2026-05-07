@@ -20,7 +20,7 @@ export async function GET() {
     // Fetch all profiles
     const { data: profiles, error: profileErr } = await supabase
       .from("profiles")
-      .select("id, full_name, role, status");
+      .select("id, full_name, role, status, pic_category");
     if (profileErr) throw profileErr;
 
     const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
@@ -29,8 +29,9 @@ export async function GET() {
       id: u.id,
       email: u.email ?? "",
       full_name: profileMap[u.id]?.full_name ?? null,
-      role: profileMap[u.id]?.role ?? "user",
+      role: profileMap[u.id]?.role ?? "pic",
       status: profileMap[u.id]?.status ?? "pending",
+      pic_category: profileMap[u.id]?.pic_category ?? null,
       created_at: u.created_at,
     }));
 
@@ -47,18 +48,20 @@ export async function GET() {
 // PATCH — update user status or role
 export async function PATCH(req: NextRequest) {
   try {
-    const { userId, status, role } = await req.json() as {
+    const { userId, status, role, pic_category } = await req.json() as {
       userId: string;
       status?: "pending" | "active" | "rejected";
-      role?: "admin" | "user";
+      role?: "admin" | "pic";
+      pic_category?: "komponen" | "aksesoris" | "laptop" | null;
     };
 
     if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });
 
     const supabase = adminClient();
-    const patch: Record<string, string> = {};
+    const patch: Record<string, string | null> = {};
     if (status) patch.status = status;
     if (role) patch.role = role;
+    if (pic_category !== undefined) patch.pic_category = pic_category;
 
     const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
     if (error) throw error;

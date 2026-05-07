@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getCurrentProfile, UserProfile } from "@/lib/profile";
-import { RefreshCw, ClipboardList, AlertCircle, ChevronRight, ShieldCheck, Download, FolderUp, CheckCircle2 } from "lucide-react";
+import { RefreshCw, ClipboardList, AlertCircle, ChevronRight, ShieldCheck, Download, FolderUp, CheckCircle2, Trash2 } from "lucide-react";
 
 type ActivityLog = {
   id: number;
@@ -44,6 +45,7 @@ function formatDate(iso: string) {
 }
 
 export default function LogsPage() {
+  const router = useRouter();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,9 +55,13 @@ export default function LogsPage() {
   const [exportingDrive, setExportingDrive] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
+  // Hanya admin yang boleh akses halaman ini
   useEffect(() => {
-    getCurrentProfile().then(setProfile);
-  }, []);
+    getCurrentProfile().then(p => {
+      setProfile(p);
+      if (p && p.role !== "admin") router.replace("/dashboard");
+    });
+  }, [router]);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -116,7 +122,9 @@ export default function LogsPage() {
   }
 
   async function exportToDrive() {
+    if (logs.length === 0) return;
     setExportingDrive(true);
+    const exportedIds = logs.map(l => l.id);
     try {
       const rows = logs.map(l => ({
         Waktu: formatDate(l.created_at),
@@ -135,7 +143,16 @@ export default function LogsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      showToast(`Berhasil diunggah: ${data.fileName}`, "success");
+
+      // Reset logs — hapus semua yang sudah diekspor dari Supabase
+      const { error: delErr } = await supabase
+        .from("activity_logs")
+        .delete()
+        .in("id", exportedIds);
+      if (delErr) throw new Error("Upload berhasil tapi gagal reset log: " + delErr.message);
+
+      setLogs([]);
+      showToast(`✅ Diunggah: ${data.fileName} · Log direset (${exportedIds.length} entri dihapus)`, "success");
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Gagal export ke Drive", "error");
     } finally {

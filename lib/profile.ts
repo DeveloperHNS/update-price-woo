@@ -1,7 +1,8 @@
 import { supabase } from "./supabase";
 
-export type UserRole = "admin" | "user";
+export type UserRole = "admin" | "pic";
 export type UserStatus = "pending" | "active" | "rejected";
+export type PicCategory = "komponen" | "aksesoris" | "laptop";
 
 export interface UserProfile {
   id: string;
@@ -9,6 +10,7 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   full_name: string | null;
+  pic_category: PicCategory | null;
 }
 
 /**
@@ -25,16 +27,17 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role, full_name, status")
+      .select("role, full_name, status, pic_category")
       .eq("id", user.id)
       .single();
 
     return {
       id: user.id,
       email: user.email ?? "",
-      role: (profile?.role as UserRole) ?? "user",
+      role: (profile?.role as UserRole) ?? "pic",
       status: (profile?.status as UserStatus) ?? "active",
       full_name: profile?.full_name ?? null,
+      pic_category: (profile?.pic_category as PicCategory) ?? null,
     };
   } catch {
     return null;

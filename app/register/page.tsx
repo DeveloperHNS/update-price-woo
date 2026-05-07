@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Store, Eye, EyeOff, UserPlus, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import type { PicCategory } from "@/lib/profile";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [picCategory, setPicCategory] = useState<PicCategory | "">("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -23,6 +25,7 @@ export default function RegisterPage() {
 
     if (!fullName.trim()) { setError("Nama lengkap wajib diisi."); return; }
     if (!email.trim()) { setError("Email wajib diisi."); return; }
+    if (!picCategory) { setError("Pilih kategori PIC terlebih dahulu."); return; }
     if (password.length < 8) { setError("Password minimal 8 karakter."); return; }
     if (password !== confirm) { setError("Konfirmasi password tidak cocok."); return; }
 
@@ -39,8 +42,9 @@ export default function RegisterPage() {
       const { error: profileErr } = await supabase.from("profiles").upsert({
         id: userId,
         full_name: fullName.trim(),
-        role: "user",
+        role: "pic",
         status: "pending",
+        pic_category: picCategory || null,
       });
       if (profileErr) throw profileErr;
 
@@ -104,6 +108,22 @@ export default function RegisterPage() {
               required
               className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
             />
+          </div>
+
+          {/* PIC Category */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Kategori PIC</label>
+            <select
+              value={picCategory}
+              onChange={e => setPicCategory(e.target.value as PicCategory)}
+              required
+              className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
+            >
+              <option value="" disabled>Pilih kategori...</option>
+              <option value="komponen">Komponen</option>
+              <option value="aksesoris">Aksesoris</option>
+              <option value="laptop">Laptop &amp; Printer</option>
+            </select>
           </div>
 
           {/* Email */}
