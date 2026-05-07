@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Store, LogIn, Eye, EyeOff } from "lucide-react";
+import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -71,6 +72,7 @@ export default function LoginPage() {
         {/* Form */}
         <div className="p-8">
           <form onSubmit={handleLogin} className="space-y-5">
+
             {error && (
               <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg">
                 {error}
@@ -130,6 +132,13 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
+
+          <p className="text-center text-sm text-slate-500 mt-6">
+            Belum punya akun?{" "}
+            <Link href="/register" className="text-blue-600 hover:underline font-medium">
+              Daftar di sini
+            </Link>
+          </p>
         </div>
       </div>
     </div>
