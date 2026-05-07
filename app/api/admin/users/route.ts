@@ -45,6 +45,27 @@ export async function GET() {
   }
 }
 
+// DELETE — permanently delete user from auth.users (profiles cascade)
+export async function DELETE(req: NextRequest) {
+  try {
+    const { userId } = await req.json() as { userId: string };
+    if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });
+
+    const supabase = adminClient();
+
+    // Hapus profile dulu (jika tidak ada cascade)
+    await supabase.from("profiles").delete().eq("id", userId);
+
+    // Hapus dari auth.users
+    const { error } = await supabase.auth.admin.deleteUser(userId);
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });
+  }
+}
+
 // PATCH — update user status or role
 export async function PATCH(req: NextRequest) {
   try {

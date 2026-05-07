@@ -39,6 +39,7 @@ export default function AdminUsersPage() {
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; email: string } | null>(null);
 
   const showToast = (msg: string, type: "success" | "error") => {
     setToast({ msg, type });
@@ -81,6 +82,25 @@ export default function AdminUsersPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Gagal update");
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...patch } : u));
       showToast("Berhasil diupdate", "success");
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Error", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    setActionLoading(userId);
+    setDeleteConfirm(null);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Gagal hapus user");
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      showToast("User berhasil dihapus", "success");
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Error", "error");
     } finally {
@@ -248,13 +268,23 @@ export default function AdminUsersPage() {
                               </>
                             )}
                             {u.status === "rejected" && (
-                              <button
-                                onClick={() => updateUser(u.id, { status: "active" })}
-                                disabled={busy}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-200 disabled:opacity-50 transition-colors"
-                              >
-                                <CheckCircle2 className="w-3 h-3" /> Aktifkan Kembali
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => updateUser(u.id, { status: "active" })}
+                                  disabled={busy}
+                                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-200 disabled:opacity-50 transition-colors"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" /> Aktifkan Kembali
+                                </button>
+                                <button
+                                  onClick={() => setDeleteConfirm({ id: u.id, email: u.email })}
+                                  disabled={busy}
+                                  className="flex items-center gap-1 px-2 py-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-30 transition-colors"
+                                  title="Hapus permanen"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -270,6 +300,36 @@ export default function AdminUsersPage() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirm Dialog */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800 text-center mb-1">Hapus User?</h3>
+            <p className="text-sm text-slate-500 text-center mb-1">
+              Akun <span className="font-semibold text-slate-700">{deleteConfirm.email}</span> akan dihapus permanen.
+            </p>
+            <p className="text-xs text-red-500 text-center mb-6">Tindakan ini tidak dapat dibatalkan.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => deleteUser(deleteConfirm.id)}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors"
+              >
+                Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (

@@ -69,7 +69,14 @@ export default function RegisterPage() {
       setSuccess(true);
 
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Gagal mendaftar, coba lagi.");
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("email rate")) {
+        setError("Terlalu banyak percobaan pendaftaran. Coba lagi beberapa menit lagi.");
+      } else if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("already been registered")) {
+        setError("Email ini sudah terdaftar. Tunggu persetujuan admin atau hubungi administrator.");
+      } else {
+        setError(msg || "Gagal mendaftar, coba lagi.");
+      }
     } finally {
       setLoading(false);
     }
