@@ -8,12 +8,21 @@ import { getCurrentProfile, UserProfile } from "@/lib/profile";
 import Link from "next/link";
 import { LayoutDashboard, UploadCloud, LogOut, Store, Menu, X, ClipboardList, ShieldCheck, User, Users } from "lucide-react";
 
+type ConfirmDialog = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmClass: string;
+  onConfirm: () => void;
+};
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [store, setStore] = useState<StoreProfile | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmDialog | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -49,6 +58,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     await supabase.auth.signOut();
     setActiveStore(null);
     router.replace("/login");
+  };
+
+  const askSwitchStore = () => {
+    setConfirm({
+      title: "Pindah Toko?",
+      message: "Kamu akan keluar dari toko ini dan kembali ke halaman pemilihan toko.",
+      confirmLabel: "Ya, Pindah Toko",
+      confirmClass: "bg-blue-600 hover:bg-blue-700 text-white",
+      onConfirm: () => { setConfirm(null); router.push("/"); },
+    });
+  };
+
+  const askSignOut = () => {
+    setConfirm({
+      title: "Keluar Akun?",
+      message: "Kamu akan logout dari aplikasi. Sesi kamu akan diakhiri.",
+      confirmLabel: "Ya, Keluar",
+      confirmClass: "bg-red-600 hover:bg-red-700 text-white",
+      onConfirm: () => { setConfirm(null); handleSignOut(); },
+    });
   };
 
   return (
@@ -150,14 +179,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           <div className="space-y-1">
             <button
-              onClick={() => router.push("/")}
+              onClick={askSwitchStore}
               className="flex items-center gap-3 px-4 py-2.5 w-full rounded-xl hover:bg-slate-800 transition-colors text-left text-slate-300"
             >
               <Store className="w-4 h-4 text-slate-400" />
               <span className="text-sm">Switch Store</span>
             </button>
             <button
-              onClick={handleSignOut}
+              onClick={askSignOut}
               className="flex items-center gap-3 px-4 py-2.5 w-full rounded-xl hover:bg-red-900/40 transition-colors text-left text-slate-300 hover:text-red-300"
             >
               <LogOut className="w-4 h-4 text-slate-400" />
@@ -171,6 +200,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="flex-1 flex flex-col min-h-0 min-w-0 overflow-y-auto">
         {children}
       </main>
+
+      {/* Confirm Dialog */}
+      {confirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-base font-bold text-slate-800 mb-1">{confirm.title}</h3>
+            <p className="text-sm text-slate-500 mb-6">{confirm.message}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirm(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirm.onConfirm}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${confirm.confirmClass}`}
+              >
+                {confirm.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
