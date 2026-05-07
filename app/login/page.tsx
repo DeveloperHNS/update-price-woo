@@ -25,11 +25,30 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
       if (authError) throw authError;
+
+      // Check user status from profiles
+      if (data.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("status")
+          .eq("id", data.user.id)
+          .single();
+
+        if (profile?.status === "pending") {
+          await supabase.auth.signOut();
+          throw new Error("Akun kamu masih menunggu persetujuan admin. Silakan hubungi administrator.");
+        }
+        if (profile?.status === "rejected") {
+          await supabase.auth.signOut();
+          throw new Error("Akun kamu tidak diizinkan untuk login. Hubungi administrator.");
+        }
+      }
+
       router.push("/");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed";

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentProfile, UserProfile } from "@/lib/profile";
-import { RefreshCw, ClipboardList, AlertCircle, ChevronRight, ShieldCheck } from "lucide-react";
+import { RefreshCw, ClipboardList, AlertCircle, ChevronRight, ShieldCheck, Download, FolderUp, CheckCircle2 } from "lucide-react";
 
 type ActivityLog = {
   id: number;
@@ -50,6 +50,8 @@ export default function LogsPage() {
   const [filterAction, setFilterAction] = useState<string>("all");
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [exportingDrive, setExportingDrive] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
     getCurrentProfile().then(setProfile);
@@ -90,6 +92,57 @@ export default function LogsPage() {
     return () => clearInterval(timer);
   }, [fetchLogs]);
 
+  const showToast = (msg: string, type: "success" | "error") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  function exportCSV() {
+    const headers = ["Waktu", "User", "Aksi", "Produk", "Product ID", "Field", "Nilai Lama", "Nilai Baru"];
+    const rows = logs.map(l => [
+      formatDate(l.created_at), l.user_email ?? "", l.action,
+      l.product_name ?? "", String(l.product_id ?? ""),
+      l.field ?? "", l.old_value ?? "", l.new_value ?? "",
+    ]);
+    const escape = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [headers, ...rows].map(r => r.map(escape).join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `activity_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportToDrive() {
+    setExportingDrive(true);
+    try {
+      const rows = logs.map(l => ({
+        Waktu: formatDate(l.created_at),
+        User: l.user_email ?? "",
+        Aksi: l.action,
+        Produk: l.product_name ?? "",
+        ProductID: String(l.product_id ?? ""),
+        Field: l.field ?? "",
+        NilaiLama: l.old_value ?? "",
+        NilaiBaru: l.new_value ?? "",
+      }));
+      const res = await fetch("/api/gdrive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast(`Berhasil diunggah: ${data.fileName}`, "success");
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Gagal export ke Drive", "error");
+    } finally {
+      setExportingDrive(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Topbar */}
@@ -107,14 +160,40 @@ export default function LogsPage() {
             Refresh otomatis 30 dtk. Terakhir: {lastRefresh.toLocaleTimeString("id-ID")}
           </span>
         </div>
-        <button
-          onClick={fetchLogs}
-          disabled={loading}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {logs.length > 0 && (
+            <>
+              <button
+                onClick={exportCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                title="Download CSV ke komputer"
+              >
+                <Download className="w-4 h-4" />
+                CSV
+              </button>
+              <button
+                onClick={exportToDrive}
+                disabled={exportingDrive}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors disabled:opacity-50"
+                title="Upload CSV ke Google Drive"
+              >
+                {exportingDrive
+                  ? <RefreshCw className="w-4 h-4 animate-spin" />
+                  : <FolderUp className="w-4 h-4" />
+                }
+                Drive
+              </button>
+            </>
+          )}
+          <button
+            onClick={fetchLogs}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Filter */}
@@ -208,6 +287,19 @@ export default function LogsPage() {
           </table>
         )}
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 bg-white ${
+          toast.type === "success" ? "border-green-200 text-green-800" : "border-red-200 text-red-700"
+        }`}>
+          {toast.type === "success"
+            ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+            : <AlertCircle className="w-4 h-4 text-red-500" />
+          }
+          {toast.msg}
+        </div>
+      )}
     </div>
   );
 }

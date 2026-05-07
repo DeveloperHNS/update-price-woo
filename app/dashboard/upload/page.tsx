@@ -6,7 +6,7 @@ import { logActivity } from "@/lib/activity-log";
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
-import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon } from "lucide-react";
+import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, ArrowUp, ArrowDown, Camera } from "lucide-react";
 
 export default function UploadProductPage() {
   const [loading, setLoading] = useState(false);
@@ -60,7 +60,12 @@ export default function UploadProductPage() {
     regular_price: string;
     sale_price: string;
     sku: string;
+    imageId?: number;
+    imageSrc?: string;
   }[]>([]);
+
+  // Variation image picker open state: key = variation index
+  const [varImgPickerOpen, setVarImgPickerOpen] = useState<number | null>(null);
 
   useEffect(() => {
     const loadWCData = async () => {
@@ -107,6 +112,16 @@ export default function UploadProductPage() {
     } finally {
       setUploadingImages(false);
     }
+  };
+
+  const moveImage = (idx: number, dir: 'up' | 'down') => {
+    setImages(prev => {
+      const arr = [...prev];
+      const to = dir === 'up' ? idx - 1 : idx + 1;
+      if (to < 0 || to >= arr.length) return prev;
+      [arr[idx], arr[to]] = [arr[to], arr[idx]];
+      return arr;
+    });
   };
 
   const addAttribute = () => {
@@ -263,7 +278,8 @@ export default function UploadProductPage() {
               id: a.id,
               name: a.name,
               option: a.option
-            }))
+            })),
+            ...(v.imageId ? { image: { id: v.imageId } } : {})
           }))
         };
 
@@ -318,7 +334,7 @@ export default function UploadProductPage() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 overflow-auto">
+    <form onSubmit={e => e.preventDefault()} className="flex flex-col h-full bg-slate-50 overflow-auto">
       {/* Topbar */}
       <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-white shrink-0 sticky top-0 z-20 shadow-sm">
         <div>
@@ -460,32 +476,52 @@ export default function UploadProductPage() {
             )}
           </label>
 
-          {/* Preview grid */}
+          {/* Ordered image list */}
           {images.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-              {images.map((img, i) => (
-                <div key={img.id} className="relative group rounded-xl overflow-hidden border border-slate-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={img.src}
-                    alt={img.alt}
-                    className="w-full h-24 object-cover"
-                  />
-                  {i === 0 && (
-                    <span className="absolute top-1 left-1 text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-semibold">
-                      Featured
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setImages((prev) => prev.filter((x) => x.id !== img.id))}
-                    className="absolute top-1 right-1 p-0.5 bg-red-500 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                    title="Hapus gambar"
-                  >
-                    <XIcon className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
+            <div className="mt-4 space-y-2">
+              <p className="text-xs text-slate-400">
+                Gunakan <span className="font-semibold">↑ ↓</span> untuk mengatur urutan.
+                Gambar <span className="font-semibold text-blue-600">pertama = Featured Image</span> (tampil utama di toko).
+              </p>
+              <div className="space-y-1.5">
+                {images.map((img, i) => (
+                  <div key={img.id} className="flex items-center gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+                    {/* Thumbnail */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.src} alt={img.alt} className="w-14 h-14 object-cover rounded-lg shrink-0 border border-slate-200" />
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {i === 0 && (
+                          <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded-md font-bold tracking-wide">
+                            ★ Featured
+                          </span>
+                        )}
+                        <span className="text-xs text-slate-500 truncate">{img.alt}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-300 mt-0.5 font-mono">ID: {img.id}</p>
+                    </div>
+                    {/* Controls */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button type="button" onClick={() => moveImage(i, 'up')} disabled={i === 0}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-slate-200"
+                        title="Pindah ke atas">
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={() => moveImage(i, 'down')} disabled={i === images.length - 1}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-slate-200"
+                        title="Pindah ke bawah">
+                        <ArrowDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={() => setImages(prev => prev.filter(x => x.id !== img.id))}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
+                        title="Hapus gambar">
+                        <XIcon className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </section>
@@ -649,62 +685,68 @@ export default function UploadProductPage() {
 
               {variations.length > 0 ? (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-slate-100 rounded-lg text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                    <div className="col-span-4">Variation Attributes</div>
+                  <div className="grid grid-cols-12 gap-3 px-4 py-2 bg-slate-100 rounded-lg text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <div className="col-span-1">Img</div>
+                    <div className="col-span-3">Variasi</div>
                     <div className="col-span-3">SKU</div>
-                    <div className="col-span-2">Regular Price</div>
-                    <div className="col-span-2">Sale Price</div>
+                    <div className="col-span-2">Harga Normal</div>
+                    <div className="col-span-2">Harga Coret</div>
+                    <div className="col-span-1"></div>
                   </div>
-                  
+
                   {variations.map((v, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-4 px-4 py-3 bg-white border border-slate-200 rounded-xl items-center shadow-sm">
-                      <div className="col-span-4 flex flex-wrap gap-1 text-sm text-slate-700 font-medium">
-                        {v.attributes.map(a => `${a.option}`).join(' • ')}
+                    <div key={i} className="grid grid-cols-12 gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl items-center shadow-sm">
+                      {/* Variation image */}
+                      <div className="col-span-1">
+                        <button
+                          type="button"
+                          onClick={() => setVarImgPickerOpen(i)}
+                          title="Pilih gambar untuk variasi ini"
+                          className={`w-10 h-10 rounded-lg border-2 overflow-hidden flex items-center justify-center transition-colors ${
+                            v.imageSrc
+                              ? 'border-blue-400 p-0'
+                              : 'border-dashed border-slate-300 hover:border-blue-400 bg-slate-50'
+                          }`}
+                        >
+                          {v.imageSrc
+                            // eslint-disable-next-line @next/next/no-img-element
+                            ? <img src={v.imageSrc} alt="" className="w-full h-full object-cover" />
+                            : <Camera className="w-4 h-4 text-slate-400" />
+                          }
+                        </button>
+                      </div>
+                      <div className="col-span-3 flex flex-wrap gap-1 text-sm text-slate-700 font-medium">
+                        {v.attributes.map(a => a.option).join(' • ')}
                       </div>
                       <div className="col-span-3">
-                        <input 
-                          type="text" value={v.sku} 
-                          onChange={e => {
-                            const nv = [...variations];
-                            nv[i].sku = e.target.value;
-                            setVariations(nv);
-                          }}
+                        <input
+                          type="text" value={v.sku}
+                          onChange={e => { const nv = [...variations]; nv[i].sku = e.target.value; setVariations(nv); }}
                           className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500"
                           placeholder="SKU"
                         />
                       </div>
                       <div className="col-span-2">
-                        <input 
-                          type="number" value={v.regular_price} 
-                          onChange={e => {
-                            const nv = [...variations];
-                            nv[i].regular_price = e.target.value;
-                            setVariations(nv);
-                          }}
+                        <input
+                          type="number" value={v.regular_price}
+                          onChange={e => { const nv = [...variations]; nv[i].regular_price = e.target.value; setVariations(nv); }}
                           onWheel={e => (e.target as HTMLElement).blur()}
                           className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500"
                           placeholder="Rp"
                         />
                       </div>
                       <div className="col-span-2">
-                        <input 
-                          type="number" value={v.sale_price} 
-                          onChange={e => {
-                            const nv = [...variations];
-                            nv[i].sale_price = e.target.value;
-                            setVariations(nv);
-                          }}
+                        <input
+                          type="number" value={v.sale_price}
+                          onChange={e => { const nv = [...variations]; nv[i].sale_price = e.target.value; setVariations(nv); }}
                           onWheel={e => (e.target as HTMLElement).blur()}
                           className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 text-red-600"
                           placeholder="Rp"
                         />
                       </div>
-                      <div className="col-span-1 text-right">
-                        <button onClick={() => {
-                          const nv = [...variations];
-                          nv.splice(i, 1);
-                          setVariations(nv);
-                        }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md">
+                      <div className="col-span-1 flex justify-end">
+                        <button type="button" onClick={() => { const nv = [...variations]; nv.splice(i, 1); setVariations(nv); }}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -725,17 +767,73 @@ export default function UploadProductPage() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-4 right-4 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border text-sm font-medium z-50 animate-in slide-in-from-bottom-5 ${
+        <div className={`fixed bottom-4 right-4 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border text-sm font-medium z-50 ${
           toast.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
           toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
           'bg-blue-50 border-blue-200 text-blue-800'
         }`}>
-          {toast.type === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : 
-           toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : 
+          {toast.type === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> :
+           toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> :
            <AlertCircle className="w-4 h-4 text-red-500" />}
           {toast.msg}
         </div>
       )}
-    </div>
+
+      {/* Variation image picker overlay */}
+      {varImgPickerOpen !== null && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setVarImgPickerOpen(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-semibold text-slate-800">Pilih Gambar Variasi</h4>
+              <button type="button" onClick={() => setVarImgPickerOpen(null)} className="p-1.5 hover:bg-slate-100 rounded-lg">
+                <XIcon className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            {images.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-6">Upload gambar produk dulu di bagian atas.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {/* Clear option */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idx = varImgPickerOpen;
+                    setVariations(prev => prev.map((v, i) => i === idx ? { ...v, imageId: undefined, imageSrc: undefined } : v));
+                    setVarImgPickerOpen(null);
+                  }}
+                  className={`aspect-square rounded-xl border-2 flex items-center justify-center text-xs font-medium transition-colors ${
+                    !variations[varImgPickerOpen]?.imageId
+                      ? 'border-blue-500 bg-blue-50 text-blue-600'
+                      : 'border-slate-200 text-slate-400 hover:border-slate-300'
+                  }`}
+                >
+                  Tidak ada
+                </button>
+                {images.map(img => {
+                  const selected = variations[varImgPickerOpen]?.imageId === img.id;
+                  return (
+                    <button
+                      key={img.id}
+                      type="button"
+                      onClick={() => {
+                        const idx = varImgPickerOpen;
+                        setVariations(prev => prev.map((v, i) => i === idx ? { ...v, imageId: img.id, imageSrc: img.src } : v));
+                        setVarImgPickerOpen(null);
+                      }}
+                      className={`aspect-square rounded-xl border-2 overflow-hidden transition-all ${
+                        selected ? 'border-blue-500 ring-2 ring-blue-300' : 'border-slate-200 hover:border-blue-300'
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.src} alt={img.alt} className="w-full h-full object-cover" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </form>
   );
 }
