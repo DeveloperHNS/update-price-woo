@@ -6,7 +6,7 @@ import { getActiveStore, setActiveStore, StoreProfile } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 import { getCurrentProfile, UserProfile } from "@/lib/profile";
 import Link from "next/link";
-import { LayoutDashboard, UploadCloud, LogOut, Store, Menu, X, ClipboardList, ShieldCheck, User, Users } from "lucide-react";
+import { LayoutDashboard, UploadCloud, LogOut, Store, Menu, X, ClipboardList, ShieldCheck, User, Users, ArrowLeftRight, DollarSign } from "lucide-react";
 
 type ConfirmDialog = {
   title: string;
@@ -47,7 +47,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navItems = [
     { name: "Manage Products", href: "/dashboard", icon: LayoutDashboard },
+    { name: "Update Harga", href: "/dashboard/update-prices", icon: DollarSign },
     { name: "Upload Product", href: "/dashboard/upload", icon: UploadCloud },
+    { name: "Sync Harga", href: "/dashboard/sync", icon: ArrowLeftRight },
     // Activity Logs — hanya admin yang bisa lihat
     ...(isAdmin ? [{ name: "Activity Logs", href: "/dashboard/logs", icon: ClipboardList }] : []),
     // Admin-only: user management

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
 import { logActivity } from "@/lib/activity-log";
-import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal } from "lucide-react";
+import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
 
 type WooCategory = {
   id: number;
@@ -14,6 +14,14 @@ type WooCategory = {
 
 const PER_PAGE = 20;
 type StockState = "instock" | "outofstock";
+
+function formatRp(raw: string | null | undefined) {
+  if (!raw) return "—";
+  const cleaned = raw.replace(/[Rp\s.]/gi, "").replace(",", ".");
+  const num = parseFloat(cleaned);
+  if (isNaN(num)) return raw;
+  return "Rp " + num.toLocaleString("id-ID");
+}
 
 export default function ManageProducts() {
   const [products, setProducts] = useState<WooProduct[]>([]);
@@ -45,6 +53,75 @@ export default function ManageProducts() {
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
   // Mobile filter panel open/close
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // Mapped Prices
+  const [mappedPrices, setMappedPrices] = useState<Record<number, { cp: string | null; price: string | null; sp: string | null }>>({});
+
+  const fetchMappedPrices = async (wooIds: number[]) => {
+    if (wooIds.length === 0) return;
+    try {
+      const res = await fetch("/api/sync/mapped-prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ woo_ids: wooIds })
+      });
+      const data = await res.json();
+      if (data.prices) {
+        setMappedPrices(prev => ({ ...prev, ...data.prices }));
+      }
+    } catch (err) {
+      console.error("Failed to fetch mapped prices", err);
+    }
+  };
+
+  // Sorting state (ascending, descending, default/null)
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder("asc");
+    } else if (sortOrder === "asc") {
+      setSortOrder("desc");
+    } else {
+      setSortField(null);
+      setSortOrder(null);
+    }
+  };
+
+  const sortedProducts = useMemo(() => {
+    if (!sortField || !sortOrder) return products;
+
+    return [...products].sort((a, b) => {
+      let valA: any = a[sortField as keyof WooProduct];
+      let valB: any = b[sortField as keyof WooProduct];
+
+      // Handle specific fields
+      if (sortField === "regular_price") {
+        const numA = parseFloat(a.regular_price || "0");
+        const numB = parseFloat(b.regular_price || "0");
+        return sortOrder === "asc" ? numA - numB : numB - numA;
+      }
+
+      if (sortField === "stock_status") {
+        valA = a.stock_status === "outofstock" ? "outofstock" : "instock";
+        valB = b.stock_status === "outofstock" ? "outofstock" : "instock";
+      }
+
+      // Convert to string/number and compare
+      if (typeof valA === "number" && typeof valB === "number") {
+        return sortOrder === "asc" ? valA - valB : valB - valA;
+      }
+
+      const strA = String(valA ?? "").toLowerCase();
+      const strB = String(valB ?? "").toLowerCase();
+
+      if (strA < strB) return sortOrder === "asc" ? -1 : 1;
+      if (strA > strB) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [products, sortField, sortOrder]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -95,6 +172,9 @@ export default function ManageProducts() {
         setProducts(parentProducts);
         setHasNextPage(items.length === PER_PAGE);
 
+        // Fetch mapped prices for these products
+        fetchMappedPrices(parentProducts.map(p => p.id));
+
         if (page === 1 && !debouncedSearch && selCatId === null) {
           const pending = consumePendingProduct();
           if (pending) {
@@ -136,6 +216,7 @@ export default function ManageProducts() {
           { _fields: "id,sku,regular_price,attributes,stock_status", per_page: 100, page: 1 }
         ) as WooVariation[];
         setVarCache(prev => ({ ...prev, [id]: vars }));
+        fetchMappedPrices(vars.map(v => v.id));
       } catch (err: any) {
         showToast("Failed to load variations: " + err.message, "error");
       } finally {
@@ -175,6 +256,7 @@ export default function ManageProducts() {
       { _fields: "id,sku,regular_price,attributes,stock_status", per_page: 100, page: 1 }
     ) as WooVariation[];
     setVarCache((prev) => ({ ...prev, [parentId]: vars }));
+    fetchMappedPrices(vars.map(v => v.id));
     return vars;
   };
   const toggleProductStock = async (product: WooProduct) => {
@@ -451,6 +533,7 @@ export default function ManageProducts() {
           onToggleVariationStock: (v: WooVariation) => toggleVariationStock(p, v),
           onUpdate: sharedOnUpdate,
           showToast,
+          mappedPrices,
         });
 
         return (
@@ -461,17 +544,91 @@ export default function ManageProducts() {
                 <thead className="sticky top-0 z-10">
                   <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide bg-slate-100 border-b border-slate-200">
                     <th className="w-10 px-3 py-2.5"></th>
-                    <th className="px-3 py-2.5 hidden md:table-cell">ID</th>
-                    <th className="px-3 py-2.5">SKU</th>
-                    <th className="px-3 py-2.5">Nama Produk</th>
-                    <th className="px-3 py-2.5 hidden md:table-cell">Tipe</th>
-                    <th className="px-3 py-2.5">Stok</th>
-                    <th className="px-3 py-2.5">Harga</th>
+                    <th 
+                      onClick={() => handleSort("id")}
+                      className="px-3 py-2.5 hidden md:table-cell cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>ID</span>
+                        {sortField === "id" ? (
+                          sortOrder === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : (
+                          <ChevronsUpDown className="w-3 h-3 text-slate-300 shrink-0" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("sku")}
+                      className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>SKU</span>
+                        {sortField === "sku" ? (
+                          sortOrder === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : (
+                          <ChevronsUpDown className="w-3 h-3 text-slate-300 shrink-0" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("name")}
+                      className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Nama Produk</span>
+                        {sortField === "name" ? (
+                          sortOrder === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : (
+                          <ChevronsUpDown className="w-3 h-3 text-slate-300 shrink-0" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("type")}
+                      className="px-3 py-2.5 hidden md:table-cell cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Tipe</span>
+                        {sortField === "type" ? (
+                          sortOrder === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : (
+                          <ChevronsUpDown className="w-3 h-3 text-slate-300 shrink-0" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("stock_status")}
+                      className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Stok</span>
+                        {sortField === "stock_status" ? (
+                          sortOrder === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : (
+                          <ChevronsUpDown className="w-3 h-3 text-slate-300 shrink-0" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort("regular_price")}
+                      className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Harga</span>
+                        {sortField === "regular_price" ? (
+                          sortOrder === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : (
+                          <ChevronsUpDown className="w-3 h-3 text-slate-300 shrink-0" />
+                        )}
+                      </div>
+                    </th>
+                    <th className="px-3 py-2.5 hidden lg:table-cell">Harga Modal (CP)</th>
+                    <th className="px-3 py-2.5 hidden lg:table-cell">Harga Dealer (PRICE)</th>
                     <th className="px-3 py-2.5">Kontrol</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {products.map(p => <ProductRow key={p.id} {...sharedProps(p)} />)}
+                  {sortedProducts.map(p => <ProductRow key={p.id} {...sharedProps(p)} />)}
                 </tbody>
               </table>
             </div>
@@ -479,7 +636,7 @@ export default function ManageProducts() {
             {/* ── Mobile cards (<sm) ── */}
             <div className="sm:hidden flex-1 overflow-auto bg-slate-50">
               <div className="p-3 space-y-2.5 pb-6">
-                {products.map(p => <ProductCard key={p.id} {...sharedProps(p)} />)}
+                {sortedProducts.map(p => <ProductCard key={p.id} {...sharedProps(p)} />)}
               </div>
             </div>
           </>
@@ -536,7 +693,7 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, updatingVarStock, onToggleVariationStock, onUpdate, showToast }: {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -550,6 +707,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   onToggleVariationStock: (v: WooVariation) => void;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success"|"error"|"loading") => void;
+  mappedPrices: Record<number, { cp: string | null; price: string | null; sp: string | null }>;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -612,6 +770,16 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
             ? <span className="text-slate-300 text-xs italic">per variasi</span>
             : <EditableCell id={p.id} field="regular_price" val={p.regular_price} type="number" prodType="simple" prefix="Rp " productName={p.name} onUpdate={onUpdate} showToast={showToast} />
           }
+        </td>
+        <td className="px-3 py-3 hidden lg:table-cell">
+          <div className="text-xs font-medium text-slate-600">
+            {isVar ? <span className="text-slate-300">—</span> : formatRp(mappedPrices[p.id]?.cp)}
+          </div>
+        </td>
+        <td className="px-3 py-3 hidden lg:table-cell">
+          <div className="text-xs font-semibold text-emerald-600">
+            {isVar ? <span className="text-slate-300">—</span> : formatRp(mappedPrices[p.id]?.price)}
+          </div>
         </td>
         <td className="px-3 py-3">
           <div className="flex flex-col gap-1.5">
@@ -700,6 +868,16 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                 </td>
                 <td className="px-3 py-2 hidden sm:table-cell">
                   <EditableCell id={v.id} parentId={p.id} field="regular_price" val={v.regular_price} type="number" prodType="variation" prefix="Rp " productName={`${p.name} — Variasi #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
+                </td>
+                <td className="px-3 py-2 hidden lg:table-cell">
+                  <div className="text-[11px] font-medium text-slate-500">
+                    {formatRp(mappedPrices[v.id]?.cp)}
+                  </div>
+                </td>
+                <td className="px-3 py-2 hidden lg:table-cell">
+                  <div className="text-[11px] font-semibold text-emerald-600">
+                    {formatRp(mappedPrices[v.id]?.price)}
+                  </div>
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
