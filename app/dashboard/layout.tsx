@@ -6,7 +6,7 @@ import { getActiveStore, setActiveStore, StoreProfile } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 import { getCurrentProfile, UserProfile } from "@/lib/profile";
 import Link from "next/link";
-import { LayoutDashboard, UploadCloud, LogOut, Store, Menu, X, ClipboardList, ShieldCheck, User, Users, ArrowLeftRight, DollarSign } from "lucide-react";
+import { LayoutDashboard, UploadCloud, LogOut, Store, Menu, X, ClipboardList, ShieldCheck, User, Users, ArrowLeftRight, DollarSign, HelpCircle } from "lucide-react";
 
 type ConfirmDialog = {
   title: string;
@@ -49,11 +49,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: "Manage Products", href: "/dashboard", icon: LayoutDashboard },
     { name: "Update Harga", href: "/dashboard/update-prices", icon: DollarSign },
     { name: "Upload Product", href: "/dashboard/upload", icon: UploadCloud },
-    { name: "Sync Harga", href: "/dashboard/sync", icon: ArrowLeftRight },
+    { name: "Sync Product", href: "/dashboard/sync", icon: ArrowLeftRight },
     // Activity Logs — hanya admin yang bisa lihat
     ...(isAdmin ? [{ name: "Activity Logs", href: "/dashboard/logs", icon: ClipboardList }] : []),
     // Admin-only: user management
     ...(isAdmin ? [{ name: "Manajemen User", href: "/dashboard/admin/users", icon: Users }] : []),
+    { name: "Panduan Penggunaan", href: "/dashboard/guide", icon: HelpCircle },
   ];
 
   const handleSignOut = async () => {
@@ -144,11 +145,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={item.name}
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                  isActive
-                    ? "bg-blue-600 text-white font-medium shadow-md shadow-blue-900/20"
-                    : "hover:bg-slate-800 hover:text-white"
-                }`}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isActive
+                  ? "bg-blue-600 text-white font-medium shadow-md shadow-blue-900/20"
+                  : "hover:bg-slate-800 hover:text-white"
+                  }`}
               >
                 <item.icon className={`w-5 h-5 ${isActive ? "text-blue-200" : "text-slate-400"}`} />
                 <span className="flex-1">{item.name}</span>

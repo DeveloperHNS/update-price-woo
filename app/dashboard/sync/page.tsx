@@ -232,7 +232,7 @@ export default function SyncPage() {
       {/* Topbar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0 gap-2">
         <div>
-          <h2 className="text-base font-bold text-slate-800">Sync Harga</h2>
+          <h2 className="text-base font-bold text-slate-800">Sync Product</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             {isAdmin ? "Semua kategori" : `Kategori: ${profile?.pic_category ?? "—"}`}
           </p>
@@ -253,18 +253,16 @@ export default function SyncPage() {
           <button
             key={t}
             onClick={() => handleTabChange(t)}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              tab === t
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t
                 ? "border-blue-600 text-blue-700"
                 : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
+              }`}
           >
             {TAB_LABELS[t]}
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
-              t === "unmatched" ? "bg-red-100 text-red-700" :
-              t === "needs_review" ? "bg-amber-100 text-amber-700" :
-              "bg-green-100 text-green-700"
-            }`}>
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${t === "unmatched" ? "bg-red-100 text-red-700" :
+                t === "needs_review" ? "bg-amber-100 text-amber-700" :
+                  "bg-green-100 text-green-700"
+              }`}>
               {counts[t]}
             </span>
           </button>
@@ -396,11 +394,10 @@ export default function SyncPage() {
                     ) : (
                       <button
                         onClick={() => { setMatchTarget(p); setWooSearch(""); setSelectedWoo(null); setVariations([]); }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                          tab === "needs_review"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${tab === "needs_review"
                             ? "text-amber-700 bg-amber-100 hover:bg-amber-200"
                             : "text-blue-700 bg-blue-100 hover:bg-blue-200"
-                        }`}
+                          }`}
                       >
                         <Link2 className="w-3.5 h-3.5" />
                         {tab === "needs_review" ? "Konfirmasi" : "Match"}
@@ -538,21 +535,19 @@ export default function SyncPage() {
                       <div key={r.id}>
                         <button
                           onClick={() => handleSelectWooProduct(r)}
-                          className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
-                            isSelected
+                          className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${isSelected
                               ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200"
                               : isVariableSelected
                                 ? "border-blue-200 bg-blue-50/50"
                                 : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-2">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-sm font-semibold text-slate-800 truncate">{r.name}</span>
-                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                                  r.type === "variable" ? "bg-purple-100 text-purple-700" : "bg-sky-100 text-sky-700"
-                                }`}>
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${r.type === "variable" ? "bg-purple-100 text-purple-700" : "bg-sky-100 text-sky-700"
+                                  }`}>
                                   {r.type === "variable" ? "Variable" : "Simple"}
                                 </span>
                               </div>
@@ -566,9 +561,8 @@ export default function SyncPage() {
                               </div>
                             </div>
                             {r.type === "variable" && (
-                              <ChevronRight className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${
-                                selectedWoo?.woo_product_id === r.id ? "rotate-90" : ""
-                              }`} />
+                              <ChevronRight className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${selectedWoo?.woo_product_id === r.id ? "rotate-90" : ""
+                                }`} />
                             )}
                             {isSelected && <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />}
                           </div>
@@ -589,11 +583,10 @@ export default function SyncPage() {
                                 <button
                                   key={v.id}
                                   onClick={() => handleSelectVariation(v, r.id, r.name)}
-                                  className={`w-full text-left px-3 py-2 rounded-lg border text-xs transition-all ${
-                                    isVarSelected
+                                  className={`w-full text-left px-3 py-2 rounded-lg border text-xs transition-all ${isVarSelected
                                       ? "border-blue-400 bg-blue-50 ring-1 ring-blue-300"
                                       : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                                  }`}
+                                    }`}
                                 >
                                   <div className="flex items-center justify-between">
                                     <div>
@@ -676,11 +669,10 @@ export default function SyncPage() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-[60] max-w-xs ${
-          toast.type === "success" ? "bg-white border-green-200 text-green-800 shadow-green-100" :
-          toast.type === "error" ? "bg-white border-red-200 text-red-700 shadow-red-100" :
-          "bg-white border-blue-200 text-blue-700 shadow-blue-100"
-        }`}>
+        <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-[60] max-w-xs ${toast.type === "success" ? "bg-white border-green-200 text-green-800 shadow-green-100" :
+            toast.type === "error" ? "bg-white border-red-200 text-red-700 shadow-red-100" :
+              "bg-white border-blue-200 text-blue-700 shadow-blue-100"
+          }`}>
           {toast.type === "loading"
             ? <RefreshCw className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
             : toast.type === "success"
