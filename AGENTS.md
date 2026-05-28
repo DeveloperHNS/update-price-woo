@@ -3,7 +3,7 @@
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 
-# WooCommerce & Accurate Price Sync Application
+# HNS SYNC V1: WooCommerce & Accurate Price Sync
 
 Welcome, Agent! This document explains the internal processes, architecture, database schema, and technical details of the application. Refer to this document before making any changes.
 
@@ -132,3 +132,78 @@ The backend implements category filtering for PICs in `app/api/sync/products/rou
     *   `laptop` -> `laptop`, `printer`, `laser`
     *   `aksesoris` -> `aksesoris`, `aksesori`, `accessories`, `accessory`
 *   Admins bypass this filter and can view and map all products.
+
+---
+
+## 5. Features Summary (MVP)
+
+1.  **Authentication & Role Management**: Supabase-based login. Two roles: `admin` (sees everything, manages users) and `pic` (limited to specific categories).
+2.  **Dashboard & Product Management**:
+    *   View all WooCommerce products.
+    *   **Inline Editing**: Instantly edit Price, SKU, and Stock status without page reloads.
+    *   **Status Control**: Publish or Private products with a single click.
+    *   **Delete Product**: Delete products with a custom confirmation modal.
+3.  **Advanced Product Upload**:
+    *   Upload Simple or Variable products.
+    *   Generate variations automatically based on attributes.
+    *   Upload images directly via WordPress Media API.
+    *   Rich text editor (Tiptap) for product descriptions.
+4.  **Accurate ERP / Sheets Sync**:
+    *   Webhook endpoint (`/api/sheet/webhook`) to receive stock/price updates.
+    *   Manual mapping interface to link ERP SKUs with WooCommerce Product IDs.
+5.  **Activity Logs & Backup**:
+    *   Records every action (update price, toggle stock, upload product).
+    *   **Google Sheets Backup**: Export logs directly to an existing Google Sheet using the Google Sheets API.
+
+---
+
+## 6. Installation & Setup Guide
+
+1.  **Clone & Install Dependencies**
+    ```bash
+    npm install
+    ```
+2.  **Environment Variables**
+    Create a `.env.local` file and populate it with:
+    *   `NEXT_PUBLIC_APP_URL`
+    *   WooCommerce API (`WOO_URL`, `WOO_CONSUMER_KEY`, `WOO_CONSUMER_SECRET`)
+    *   WordPress API for media (`WP_URL`, `WP_USERNAME`, `WP_APP_PASSWORD`)
+    *   Supabase (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`)
+    *   Google Drive / Sheets API (`GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY`)
+3.  **Supabase Setup**
+    *   Run the SQL migrations to create the required tables: `profiles`, `products`, `product_woo_mapping`, `sync_log`, and `activity_logs`.
+    *   Enable Email/Password authentication.
+4.  **Create Admin User**
+    Run the setup script to create the initial admin user using the Supabase Service Role key:
+    ```bash
+    node scratch/activate-admin.mjs
+    ```
+5.  **Run Development Server**
+    ```bash
+    npm run dev
+    ```
+
+---
+
+## 7. HNS SYNC V2 (Planned Features)
+
+**Visi V2: Pusat Analisa Pergerakan Stok Produk (Stock Movement Analysis)**
+
+Berdasarkan diskusi terbaru, arah pengembangan sistem V2 akan difokuskan murni untuk **Analisa Internal**, bukan untuk mengupdate stok ke WooCommerce ataupun Purchasing dalam waktu dekat.
+
+**Latar Belakang & Kendala:**
+- **WooCommerce Stok:** Dikelola manual oleh Admin WordPress (Sistem ini tidak boleh menyentuh stok Woo agar barang tidak terlihat sedikit oleh pelanggan).
+- **Accurate ERP:** Stok sebenarnya ada di Accurate, namun API Accurate tidak diizinkan untuk diakses secara langsung oleh manajemen/bos.
+- **Solusi:** Google Sheets hasil cek fisik (Opname) dari 3 lokasi akan menjadi satu-satunya *sumber kebenaran (source of truth)* bagi sistem internal ini.
+
+**Logika & Fitur Sistem V2:**
+1. **Sumber Data:** 3 File Google Sheets terpisah (Gudang Utama, Nagoyahill, Gateway).
+2. **Kunci Pencocokan:** Tab `REKAPAN`, menggunakan kolom `KODE BARANG`.
+3. **Nilai Stok Fisik:** Diambil dari kolom `# TOTAL` di ujung kanan.
+4. **Sentralisasi & Rekam Jejak (History):** 
+   - Sistem menarik data dari ketiga sheet dan menyimpannya di database (Supabase).
+   - Sistem akan melacak angka ini dari waktu ke waktu (misalnya ditarik setiap hari).
+5. **Analisa Pergerakan Produk (Core Feature):** 
+   - Karena website tidak terhubung ke API Penjualan/Kasir untuk melihat "barang keluar", website akan menyimpulkan barang keluar berdasarkan penurunan stok di Sheets.
+   - Contoh: Kemarin total stok 3, hari ini total stok 2. Sistem mencatat ada pergerakan/penjualan sebanyak 1 unit.
+   - **Tujuan Akhir:** Membuat Dashboard Analitik yang menampilkan **"Produk Fast-Moving"** (stoknya cepat berkurang) dan **"Produk Slow-Moving"** (stoknya diam berhari-hari). Ini akan sangat membantu manajemen dalam mengambil keputusan bisnis.

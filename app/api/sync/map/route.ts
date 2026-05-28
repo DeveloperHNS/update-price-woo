@@ -18,11 +18,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "kode_accurate and woo_product_id are required" }, { status: 400 });
   }
 
-  // Deactivate any existing mapping for this kode_accurate
+  // Delete any existing mapping for this kode_accurate to prevent unique constraint violations
   await supabase
     .from("product_woo_mapping")
-    .update({ is_active: false })
+    .delete()
     .eq("kode_accurate", kode_accurate);
+
+  // ALSO delete any existing mapping that might already be holding this WooCommerce product/variation
+  if (woo_variation_id) {
+    await supabase
+      .from("product_woo_mapping")
+      .delete()
+      .eq("woo_product_id", woo_product_id)
+      .eq("woo_variation_id", woo_variation_id);
+  } else {
+    await supabase
+      .from("product_woo_mapping")
+      .delete()
+      .eq("woo_product_id", woo_product_id)
+      .is("woo_variation_id", null);
+  }
 
   // Insert new mapping
   const { data, error } = await supabase

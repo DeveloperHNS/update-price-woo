@@ -144,15 +144,7 @@ export default function LogsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      // Reset logs — hapus semua yang sudah diekspor dari Supabase
-      const { error: delErr } = await supabase
-        .from("activity_logs")
-        .delete()
-        .in("id", exportedIds);
-      if (delErr) throw new Error("Upload berhasil tapi gagal reset log: " + delErr.message);
-
-      setLogs([]);
-      showToast(`✅ Diunggah: ${data.fileName} · Log direset (${exportedIds.length} entri dihapus)`, "success");
+      showToast(`✅ Diunggah: 1 Google Sheets diperbarui`, "success");
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Gagal export ke Drive", "error");
     } finally {

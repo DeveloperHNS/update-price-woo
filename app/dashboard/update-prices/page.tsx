@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
-import { Search, RefreshCw, AlertCircle, Save, CheckCircle2 } from "lucide-react";
+import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X } from "lucide-react";
 
 function formatRp(raw: string | null | undefined) {
   if (!raw) return "—";
@@ -13,16 +13,107 @@ function formatRp(raw: string | null | undefined) {
   return "Rp " + num.toLocaleString("id-ID");
 }
 
+function MultiSelectDropdown({ 
+  options, 
+  selected, 
+  onChange, 
+  placeholder,
+  searchPlaceholder 
+}: { 
+  options: string[], 
+  selected: string[], 
+  onChange: (val: string[]) => void, 
+  placeholder: string,
+  searchPlaceholder: string 
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+
+  const toggleOption = (opt: string) => {
+    if (selected.includes(opt)) {
+      onChange(selected.filter(s => s !== opt));
+    } else {
+      onChange([...selected, opt]);
+    }
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="px-4 py-2.5 w-full md:w-56 text-left border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm flex items-center justify-between transition-colors hover:border-blue-300"
+      >
+        <span className="truncate">
+          {selected.length === 0 ? placeholder : `${selected.length} ${placeholder.replace("Semua ", "")} dipilih`}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute z-50 mt-2 w-full min-w-[260px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[350px]">
+          <div className="p-2 border-b border-slate-100 shrink-0">
+            <input 
+              type="text" 
+              placeholder={searchPlaceholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div className="overflow-y-auto p-2 flex-1">
+            {filteredOptions.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-4">Tidak ditemukan</p>
+            ) : (
+              filteredOptions.map(opt => (
+                <label key={opt} className="flex items-center gap-2.5 px-2 py-2 hover:bg-slate-50 cursor-pointer rounded-lg text-sm transition-colors">
+                  <input 
+                    type="checkbox" 
+                    checked={selected.includes(opt)}
+                    onChange={() => toggleOption(opt)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                  />
+                  <span className="truncate text-slate-700">{opt}</span>
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function UpdatePricesPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [products, setProducts] = useState<ProductWithStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [catFilter, setCatFilter] = useState<string[]>([]);
+  const [brandFilter, setBrandFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
 
   // Edits tracking
   const [edits, setEdits] = useState<Record<string, { cp: string; price: string }>>({});
   const [saving, setSaving] = useState(false);
+
+  // Extract unique filter options from loaded products
+  const uniqueCategories = Array.from(new Set(products.map(p => p["KATEGORI"]).filter(Boolean))).sort();
+  const uniqueBrands = Array.from(new Set(products.map(p => p["NAMA BRAND"]).filter(Boolean))).sort();
+  const uniqueStatuses = Array.from(new Set(products.map(p => p["STATUS"]).filter(Boolean))).sort();
 
   const showToast = (msg: string, type: "success" | "error" | "loading") => {
     setToast({ msg, type });
@@ -108,13 +199,17 @@ export default function UpdatePricesPage() {
   };
 
   const filtered = products.filter((p) => {
-    if (!search.trim()) return true;
     const q = search.toLowerCase();
-    return (
+    const matchSearch = !search.trim() || 
       (p["Kode Accurate"] ?? "").toLowerCase().includes(q) ||
       (p["NAMA BARANG"] ?? "").toLowerCase().includes(q) ||
-      (p["KATEGORI"] ?? "").toLowerCase().includes(q)
-    );
+      (p["KATEGORI"] ?? "").toLowerCase().includes(q);
+
+    const matchCat = catFilter.length === 0 || catFilter.includes(p["KATEGORI"] || "");
+    const matchBrand = brandFilter.length === 0 || brandFilter.includes(p["NAMA BRAND"] || "");
+    const matchStatus = statusFilter.length === 0 || statusFilter.includes(p["STATUS"] || "Aktif"); // Default to Aktif if empty
+
+    return matchSearch && matchCat && matchBrand && matchStatus;
   });
 
   const isAdmin = profile?.role === "admin";
@@ -153,16 +248,52 @@ export default function UpdatePricesPage() {
       </div>
 
       <div className="p-6 flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Search */}
-        <div className="mb-4 relative shrink-0 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Cari kode, nama produk, kategori..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-10 pr-4 py-2.5 w-full border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm"
+        {/* Filters */}
+        <div className="mb-4 flex flex-col md:flex-row gap-3 shrink-0 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Cari kode, nama, kategori..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10 pr-4 py-2.5 w-full border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm"
+            />
+          </div>
+          
+          <MultiSelectDropdown 
+            options={uniqueCategories as string[]}
+            selected={catFilter}
+            onChange={setCatFilter}
+            placeholder="Semua Kategori"
+            searchPlaceholder="Cari Kategori..."
           />
+
+          <MultiSelectDropdown 
+            options={uniqueBrands as string[]}
+            selected={brandFilter}
+            onChange={setBrandFilter}
+            placeholder="Semua Brand"
+            searchPlaceholder="Cari Brand..."
+          />
+
+          <MultiSelectDropdown 
+            options={uniqueStatuses as string[]}
+            selected={statusFilter}
+            onChange={setStatusFilter}
+            placeholder="Semua Status"
+            searchPlaceholder="Cari Status..."
+          />
+
+          {(catFilter.length > 0 || brandFilter.length > 0 || statusFilter.length > 0) && (
+            <button 
+              onClick={() => { setCatFilter([]); setBrandFilter([]); setStatusFilter([]); }}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition-colors shrink-0"
+            >
+              <X className="w-4 h-4" />
+              Reset Filter
+            </button>
+          )}
         </div>
 
         {/* Product List */}

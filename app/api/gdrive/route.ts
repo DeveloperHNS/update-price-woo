@@ -13,59 +13,57 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Check required env vars ──────────────────────────────────────────────
-    const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const sheetId = "1jtaY6UdSeYNZYe1YM8sM6FQhHQD4sg22JjZtv1sE2H4"; // Hardcoded from user
 
-    if (!serviceAccountJson || !folderId) {
+    if (!clientEmail || !privateKey) {
       return NextResponse.json(
-        {
-          error:
-            "GOOGLE_SERVICE_ACCOUNT_JSON atau GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi di .env.local",
-        },
+        { error: "Kredensial Google (EMAIL/PRIVATE_KEY) belum lengkap di .env.local" },
         { status: 503 }
       );
     }
 
     // ── Auth with Service Account ────────────────────────────────────────────
-    const credentials = JSON.parse(serviceAccountJson);
     const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ["https://www.googleapis.com/auth/drive.file"],
+      credentials: {
+        client_email: clientEmail,
+        private_key: privateKey,
+      },
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
 
-    const drive = google.drive({ version: "v3", auth });
+    const sheets = google.sheets({ version: "v4", auth });
 
-    // ── Build CSV ────────────────────────────────────────────────────────────
-    const headers = Object.keys(rows[0]);
-    const escape = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const csvLines = [
-      headers.map(escape).join(","),
-      ...rows.map(row => headers.map(h => escape(row[h])).join(",")),
-    ];
-    const csvContent = csvLines.join("\n");
+    // ── Build Values 2D Array ────────────────────────────────────────────────
+    // Reverse rows so chronological order is maintained (oldest first if logs were descending)
+    // Wait, the client sends them from newest to oldest. Let's keep the order the client sent.
+    const values = rows.map(row => [
+      row.Waktu,
+      row.User,
+      row.Aksi,
+      row.Produk,
+      row.ProductID,
+      row.Field,
+      row.NilaiLama,
+      row.NilaiBaru
+    ]);
 
-    // ── Upload to Google Drive ───────────────────────────────────────────────
-    const exportFilename =
-      filename || `activity_logs_${new Date().toISOString().slice(0, 10)}.csv`;
-
-    const { data } = await drive.files.create({
+    // ── Append to Google Sheets ───────────────────────────────────────────────
+    const response = await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: "A1", // Appends to the end of the sheet automatically
+      valueInputOption: "USER_ENTERED",
       requestBody: {
-        name: exportFilename,
-        mimeType: "text/csv",
-        parents: [folderId],
+        values,
       },
-      media: {
-        mimeType: "text/csv",
-        body: csvContent,
-      },
-      fields: "id, name, webViewLink",
     });
 
     return NextResponse.json({
       success: true,
-      fileId: data.id,
-      fileName: data.name,
-      viewLink: data.webViewLink,
+      updatedCells: response.data.updates?.updatedCells,
+      fileName: "Google Sheets",
+      viewLink: `https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Internal Server Error";

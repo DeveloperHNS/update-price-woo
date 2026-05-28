@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
 import { logActivity } from "@/lib/activity-log";
-import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
+import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2 } from "lucide-react";
 
 type WooCategory = {
   id: number;
@@ -48,6 +48,8 @@ export default function ManageProducts() {
   // Per-variation stock update: key = "${parentId}-${varId}"
   const [updatingVarStock, setUpdatingVarStock] = useState<Set<string>>(new Set());
   const [updatingStatus, setUpdatingStatus] = useState<Set<number>>(new Set());
+  const [deleting, setDeleting] = useState<Set<number>>(new Set());
+  const [productToDelete, setProductToDelete] = useState<WooProduct | null>(null);
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
@@ -351,6 +353,25 @@ export default function ManageProducts() {
     }
   };
 
+  const confirmDelete = async () => {
+    if (!productToDelete) return;
+    if (deleting.has(productToDelete.id)) return;
+
+    setDeleting(prev => new Set(prev).add(productToDelete.id));
+    showToast("Menghapus produk...", "loading");
+    try {
+      await wooFetch(`products/${productToDelete.id}`, "DELETE", undefined, { force: true });
+      setProducts(prev => prev.filter(p => p.id !== productToDelete.id));
+      logActivity({ action: "delete_product", product_id: productToDelete.id, product_name: productToDelete.name });
+      showToast("Produk berhasil dihapus", "success");
+    } catch (err: unknown) {
+      showToast("Gagal menghapus: " + (err instanceof Error ? err.message : "error"), "error");
+    } finally {
+      setDeleting(prev => { const n = new Set(prev); n.delete(productToDelete.id); return n; });
+      setProductToDelete(null);
+    }
+  };
+
   const firstEntry = products.length > 0 ? (page - 1) * PER_PAGE + 1 : 0;
   const lastEntry = (page - 1) * PER_PAGE + products.length;
 
@@ -529,6 +550,8 @@ export default function ManageProducts() {
           onToggleStock: () => toggleProductStock(p),
           isUpdatingStatus: updatingStatus.has(p.id),
           onToggleStatus: () => toggleProductStatus(p),
+          isDeleting: deleting.has(p.id),
+          onDelete: () => setProductToDelete(p),
           updatingVarStock,
           onToggleVariationStock: (v: WooVariation) => toggleVariationStock(p, v),
           onUpdate: sharedOnUpdate,
@@ -669,6 +692,44 @@ export default function ManageProducts() {
         </div>
       </div>
 
+      {/* Delete Confirmation Modal */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4 mx-auto">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Hapus Produk?</h3>
+              <p className="text-sm text-slate-500 text-center leading-relaxed">
+                Anda yakin ingin menghapus <span className="font-semibold text-slate-700">"{productToDelete.name}"</span>? Aksi ini bersifat permanen dan tidak bisa dibatalkan.
+              </p>
+            </div>
+            <div className="flex border-t border-slate-100">
+              <button 
+                onClick={() => setProductToDelete(null)}
+                disabled={deleting.has(productToDelete.id)}
+                className="flex-1 py-3.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <div className="w-px bg-slate-100" />
+              <button 
+                onClick={confirmDelete}
+                disabled={deleting.has(productToDelete.id)}
+                className="flex-1 py-3.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deleting.has(productToDelete.id) ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Menghapus...</>
+                ) : (
+                  "Ya, Hapus"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 max-w-xs ${
@@ -693,7 +754,7 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices }: {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -703,6 +764,8 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   onToggleStock: () => void;
   isUpdatingStatus: boolean;
   onToggleStatus: () => void;
+  isDeleting: boolean;
+  onDelete: () => void;
   updatingVarStock: Set<string>;
   onToggleVariationStock: (v: WooVariation) => void;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
@@ -820,6 +883,19 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
               }
               {isPublished ? "Publish" : "Private"}
             </button>
+            {/* Delete button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              disabled={isDeleting}
+              title="Hapus Produk"
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit disabled:opacity-40 disabled:cursor-not-allowed bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
+            >
+              {isDeleting
+                ? <RefreshCw className="w-3 h-3 animate-spin" />
+                : <Trash2 className="w-3 h-3" />
+              }
+              Hapus
+            </button>
           </div>
         </td>
       </tr>
@@ -916,7 +992,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
 }
 
 // ── ProductCard — mobile card view ──────────────────────────────────────────
-function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, updatingVarStock, onToggleVariationStock, onUpdate, showToast }: {
+function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -926,6 +1002,8 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
   onToggleStock: () => void;
   isUpdatingStatus: boolean;
   onToggleStatus: () => void;
+  isDeleting: boolean;
+  onDelete: () => void;
   updatingVarStock: Set<string>;
   onToggleVariationStock: (v: WooVariation) => void;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
@@ -1028,6 +1106,21 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
               }
             </button>
             <span className="text-[9px] text-slate-400 font-medium">{isPublished ? "Publish" : "Private"}</span>
+          </div>
+          {/* Delete toggle */}
+          <div className="flex flex-col items-center gap-0.5">
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              disabled={isDeleting}
+              title="Hapus Produk"
+              className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors disabled:opacity-40 bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
+            >
+              {isDeleting
+                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                : <Trash2 className="w-3.5 h-3.5" />
+              }
+            </button>
+            <span className="text-[9px] text-slate-400 font-medium">Hapus</span>
           </div>
         </div>
       </div>
