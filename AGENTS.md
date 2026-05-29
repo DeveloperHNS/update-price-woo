@@ -183,27 +183,33 @@ The backend implements category filtering for PICs in `app/api/sync/products/rou
     npm run dev
     ```
 
----
 
-## 7. HNS SYNC V2 (Planned Features)
 
-**Visi V2: Pusat Analisa Pergerakan Stok Produk (Stock Movement Analysis)**
+## 7. HNS SYNC V2 (Stock Movement & Analytics Hub)
 
-Berdasarkan diskusi terbaru, arah pengembangan sistem V2 akan difokuskan murni untuk **Analisa Internal**, bukan untuk mengupdate stok ke WooCommerce ataupun Purchasing dalam waktu dekat.
+**Visi V2: Pusat Analisa Pergerakan Stok Produk Terintegrasi**
+
+Berdasarkan diskusi terbaru dan bedah skema database (Supabase) yang sudah ada, arah pengembangan sistem V2 difokuskan murni untuk **Analisa Internal**, memanfaatkan tabel-tabel bawaan (native) tanpa perlu mengubah struktur secara radikal.
 
 **Latar Belakang & Kendala:**
-- **WooCommerce Stok:** Dikelola manual oleh Admin WordPress (Sistem ini tidak boleh menyentuh stok Woo agar barang tidak terlihat sedikit oleh pelanggan).
+- **WooCommerce Stok:** Dikelola manual oleh Admin WordPress (Sistem ini dilarang mengirim kuantitas asli agar barang tidak terlihat sedikit oleh pelanggan).
 - **Accurate ERP:** Stok sebenarnya ada di Accurate, namun API Accurate tidak diizinkan untuk diakses secara langsung oleh manajemen/bos.
-- **Solusi:** Google Sheets hasil cek fisik (Opname) dari 3 lokasi akan menjadi satu-satunya *sumber kebenaran (source of truth)* bagi sistem internal ini.
+- **Solusi:** Google Sheets hasil cek fisik (Opname) dari 3 lokasi akan menjadi *source of truth* untuk pergerakan stok internal.
 
-**Logika & Fitur Sistem V2:**
-1. **Sumber Data:** 3 File Google Sheets terpisah (Gudang Utama, Nagoyahill, Gateway).
-2. **Kunci Pencocokan:** Tab `REKAPAN`, menggunakan kolom `KODE BARANG`.
-3. **Nilai Stok Fisik:** Diambil dari kolom `# TOTAL` di ujung kanan.
-4. **Sentralisasi & Rekam Jejak (History):** 
-   - Sistem menarik data dari ketiga sheet dan menyimpannya di database (Supabase).
-   - Sistem akan melacak angka ini dari waktu ke waktu (misalnya ditarik setiap hari).
-5. **Analisa Pergerakan Produk (Core Feature):** 
-   - Karena website tidak terhubung ke API Penjualan/Kasir untuk melihat "barang keluar", website akan menyimpulkan barang keluar berdasarkan penurunan stok di Sheets.
-   - Contoh: Kemarin total stok 3, hari ini total stok 2. Sistem mencatat ada pergerakan/penjualan sebanyak 1 unit.
-   - **Tujuan Akhir:** Membuat Dashboard Analitik yang menampilkan **"Produk Fast-Moving"** (stoknya cepat berkurang) dan **"Produk Slow-Moving"** (stoknya diam berhari-hari). Ini akan sangat membantu manajemen dalam mengambil keputusan bisnis.
+**Logika & Alur Sistem V2 Berdasarkan Skema Database Saat Ini:**
+1. **Data Ingestion (Penarik Data 3 Lokasi):**
+   - Mengambil data dari 3 File Google Sheets (Gudang Utama, Nagoyahill, Gateway) melalui tab `REKAPAN` (menggunakan `# TOTAL`).
+   - Melakukan *UPSERT* (update/insert) angka kuantitas tersebut ke tabel bawaan **`stock_locations`**.
+2. **Movement Engine (Mesin Pendeteksi Penjualan):**
+   - Sebelum mengupdate `stock_locations`, sistem akan membandingkan angka yang baru ditarik dengan angka lama di database.
+   - Jika terdapat penurunan stok (selisih negatif), sistem otomatis mencatatnya sebagai barang keluar (terjual) ke dalam tabel **`stock_movements`** (dengan `type = 'OUT'`).
+   - Fitur ini menggantikan ketergantungan kita pada API Kasir/POS, karena sistem bisa menyimpulkan barang keluar murni dari penurunan opname.
+3. **Alert Engine (Notifikasi Stok Kritis):**
+   - Sistem akan memonitor jika total gabungan stok (dari 3 lokasi) menyentuh batas `min_stock` yang ada di tabel `products`.
+   - Jika kritis, sistem mencetak log peringatan ke dalam tabel **`stock_alerts`** untuk dieksekusi oleh tim Purchasing.
+4. **Dashboard Analitik (UI):**
+   - Membuat halaman khusus di website yang merangkum:
+     - **Produk Fast-Moving 🔥**: Berdasarkan frekuensi kemunculan di `stock_movements` (tipe OUT).
+     - **Produk Slow-Moving 🧊**: Barang yang stoknya mengendap lama tanpa pergerakan.
+     - **Daftar Belanja 🛒**: Tarikan langsung dari `stock_alerts`.
+
