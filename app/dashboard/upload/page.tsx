@@ -6,7 +6,7 @@ import { logActivity } from "@/lib/activity-log";
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
-import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, ArrowUp, ArrowDown, Camera } from "lucide-react";
+import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, ArrowUp, ArrowDown, Camera, RotateCcw } from "lucide-react";
 
 export default function UploadProductPage() {
   const [loading, setLoading] = useState(false);
@@ -28,7 +28,7 @@ export default function UploadProductPage() {
   const [sku, setSku] = useState("");
   const [regularPrice, setRegularPrice] = useState("");
   const [salePrice, setSalePrice] = useState("");
-  const [selCatId, setSelCatId] = useState<number | null>(null);
+  const [selCatIds, setSelCatIds] = useState<number[]>([]);
   const [catSearch, setCatSearch] = useState("");
   const [showCatDD, setShowCatDD] = useState(false);
 
@@ -39,7 +39,7 @@ export default function UploadProductPage() {
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        class: 'prose max-w-none focus:outline-none min-h-[200px] p-4 bg-white border border-slate-200 rounded-b-lg'
+        class: 'prose max-w-none focus:outline-none min-h-[160px] p-4 bg-white'
       }
     }
   });
@@ -47,7 +47,7 @@ export default function UploadProductPage() {
   const [selectedAttributes, setSelectedAttributes] = useState<{
     id: number;
     name: string;
-    options: string; // Comma separated for input
+    options: string;
     variation: boolean;
   }[]>([]);
 
@@ -64,7 +64,6 @@ export default function UploadProductPage() {
     imageSrc?: string;
   }[]>([]);
 
-  // Variation image picker open state: key = variation index
   const [varImgPickerOpen, setVarImgPickerOpen] = useState<number | null>(null);
 
   useEffect(() => {
@@ -125,12 +124,7 @@ export default function UploadProductPage() {
   };
 
   const addAttribute = () => {
-    if (globalAttributes.length === 0) {
-      // Allow custom attributes if none global exist, but global is safer
-      setSelectedAttributes([...selectedAttributes, { id: 0, name: "", options: "", variation: type === 'variable' }]);
-    } else {
-      setSelectedAttributes([...selectedAttributes, { id: globalAttributes[0].id, name: globalAttributes[0].name, options: "", variation: type === 'variable' }]);
-    }
+    setSelectedAttributes([...selectedAttributes, { id: 0, name: "", options: "", variation: type === 'variable' }]);
   };
 
   const removeAttribute = (index: number) => {
@@ -145,7 +139,6 @@ export default function UploadProductPage() {
       const globalAttr = globalAttributes.find(a => a.id === Number(val));
       if (globalAttr) {
         newAttrs[index] = { ...newAttrs[index], id: globalAttr.id, name: globalAttr.name, options: "" };
-        
         if (globalAttr.id > 0 && !termsCache[globalAttr.id]) {
           setLoadingTerms(prev => ({ ...prev, [globalAttr.id]: true }));
           try {
@@ -167,138 +160,85 @@ export default function UploadProductPage() {
   };
 
   const generateVariations = () => {
-    // Collect attributes marked for variation
     const varAttrs = selectedAttributes.filter(a => a.variation && a.options.trim());
     if (varAttrs.length === 0) {
       showToast("No attributes marked for variations with options", "error");
       return;
     }
-
-    // Parse options: split by | or ,
     const parsedAttrs = varAttrs.map(a => ({
       id: a.id,
       name: a.name,
       options: a.options.split(/[|,]/).map(s => s.trim()).filter(Boolean)
     }));
-
-    // Cartesian product of options
-    const cartesian = (arrays: any[][]): any[][] => {
-      return arrays.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())), [[]]);
-    };
-
+    const cartesian = (arrays: any[][]): any[][] =>
+      arrays.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())), [[]]);
     const combinations = cartesian(parsedAttrs.map(a => a.options));
-
     const newVars = combinations.map(comb => {
       const combArray = Array.isArray(comb) ? comb : [comb];
-      const attrsForVar = parsedAttrs.map((a, i) => ({
-        id: a.id,
-        name: a.name,
-        option: combArray[i]
-      }));
+      const attrsForVar = parsedAttrs.map((a, i) => ({ id: a.id, name: a.name, option: combArray[i] }));
       const key = attrsForVar.map(a => a.option).join('-');
       return {
         key,
         attributes: attrsForVar,
-        regular_price: regularPrice || "", // Default to parent's price if set
+        regular_price: regularPrice || "",
         sale_price: salePrice || "",
         sku: sku ? `${sku}-${key.toUpperCase().replace(/\s+/g, '')}` : ""
       };
     });
-
     setVariations(newVars);
     showToast(`Generated ${newVars.length} variations`, "success");
   };
 
   const handleUpload = async () => {
-    if (!name) {
-      showToast("Product name is required", "error");
-      return;
-    }
-
+    if (!name) { showToast("Product name is required", "error"); return; }
     setLoading(true);
     setUploadStep(null);
-
     try {
-      // 1. Prepare Parent Product payload
-      const payload: any = {
-        name,
-        type,
-        sku,
-        description: editor?.getHTML() || "",
-      };
-
-      // Only attach prices if they exist, to prevent "0" defaults
+      const payload: any = { name, type, sku, description: editor?.getHTML() || "" };
       if (type === 'simple') {
         if (regularPrice) payload.regular_price = regularPrice;
         if (salePrice) payload.sale_price = salePrice;
       }
-
-      if (selCatId) {
-        // Find all parent categories recursively
+      if (selCatIds.length > 0) {
         const getParentIds = (id: number): number[] => {
           const cat = categories.find(c => c.id === id);
           if (!cat || !cat.parent) return [id];
           return [id, ...getParentIds(cat.parent)];
         };
-        const allCatIds = getParentIds(selCatId);
-        payload.categories = allCatIds.map(id => ({ id }));
+        const allCatIds = new Set<number>();
+        selCatIds.forEach(id => getParentIds(id).forEach(pId => allCatIds.add(pId)));
+        payload.categories = Array.from(allCatIds).map(id => ({ id }));
       }
-
       if (selectedAttributes.length > 0) {
         payload.attributes = selectedAttributes.map(a => ({
-          id: a.id,
-          name: a.name,
-          visible: true,
-          variation: a.variation,
+          id: a.id, name: a.name, visible: true, variation: a.variation,
           options: a.options.split(/[|,]/).map(s => s.trim()).filter(Boolean)
         }));
       }
+      if (images.length > 0) payload.images = images.map(img => ({ id: img.id, alt: img.alt }));
 
-      // Attach uploaded images
-      if (images.length > 0) {
-        payload.images = images.map(img => ({ id: img.id, alt: img.alt }));
-      }
-
-      // 2. Create Parent Product
       setUploadStep("Membuat produk...");
       showToast("Membuat produk...", "loading");
       const createdProduct = await wooFetch("products", "POST", payload);
       const parentId = createdProduct.id;
 
-      // 3. Create Variations if variable
       if (type === 'variable' && variations.length > 0) {
         setUploadStep(`Membuat ${variations.length} variasi...`);
         showToast(`Membuat ${variations.length} variasi...`, "loading");
-        const createVarsPayload = {
+        await wooFetch(`products/${parentId}/variations/batch`, "POST", {
           create: variations.map(v => ({
-            regular_price: v.regular_price,
-            sale_price: v.sale_price,
-            sku: v.sku,
-            attributes: v.attributes.map(a => ({
-              id: a.id,
-              name: a.name,
-              option: a.option
-            })),
+            regular_price: v.regular_price, sale_price: v.sale_price, sku: v.sku,
+            attributes: v.attributes.map(a => ({ id: a.id, name: a.name, option: a.option })),
             ...(v.imageId ? { image: { id: v.imageId } } : {})
           }))
-        };
-
-        await wooFetch(`products/${parentId}/variations/batch`, "POST", createVarsPayload);
+        });
       }
 
-      setUploadStep("Selesai! Mengalihkan ke dashboard...");
+      setUploadStep("Selesai!");
       showToast("Produk berhasil diupload!", "success");
-
-      // Log activity
       logActivity({ action: "upload_product", product_id: parentId, product_name: name });
-
-      // Manually inject into local cache so dashboard is instant
       appendCache("products", createdProduct);
-
-      setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 1500);
-
+      setTimeout(() => { window.location.href = "/dashboard"; }, 1500);
     } catch (err: any) {
       showToast(err.message, "error");
       setUploadStep(null);
@@ -307,132 +247,179 @@ export default function UploadProductPage() {
     }
   };
 
-  // Category Tree building
   const catTree = (() => {
-    const buildTree = (parentId = 0, depth = 0): any[] => {
-      return categories
-        .filter(c => c.parent === parentId)
-        .flatMap(c => [{ ...c, depth }, ...buildTree(c.id, depth + 1)]);
-    };
+    const buildTree = (parentId = 0, depth = 0): any[] =>
+      categories.filter(c => c.parent === parentId).flatMap(c => [{ ...c, depth }, ...buildTree(c.id, depth + 1)]);
     const tree = buildTree();
     if (!catSearch.trim()) return tree;
     return tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
   })();
 
-  const selectedCatName = selCatId === null 
-    ? "Select a Category..." 
-    : categories.find(c => c.id === selCatId)?.name || "Unknown";
-
-
   if (initialLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-500 bg-white">
         <RefreshCw className="w-8 h-8 animate-spin mb-4 text-blue-500" />
-        <p>Loading attributes and categories...</p>
+        <p className="text-sm">Memuat data WooCommerce...</p>
       </div>
     );
   }
 
   return (
     <form onSubmit={e => e.preventDefault()} className="flex flex-col h-full bg-slate-50 overflow-auto">
-      {/* Topbar */}
-      <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-white shrink-0 sticky top-0 z-20 shadow-sm">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">Upload New Product</h2>
-          <p className="text-sm text-slate-500 mt-1">Create a new product in your WooCommerce store</p>
+
+      {/* ── Topbar ── */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 sticky top-0 z-20 shadow-sm">
+        <div className="min-w-0">
+          <h2 className="text-lg sm:text-2xl font-bold text-slate-800 leading-tight truncate">Upload New Product</h2>
+          <p className="text-xs text-slate-400 hidden sm:block mt-0.5">Buat produk baru di WooCommerce store</p>
         </div>
-        <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-2 shrink-0">
+          {uploadStep && <p className="text-xs text-blue-600 font-medium animate-pulse hidden md:block">{uploadStep}</p>}
           <button
             onClick={handleUpload}
             disabled={loading}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:shadow-none"
+            className="flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl transition-colors shadow-lg shadow-blue-500/25 disabled:opacity-50 disabled:shadow-none"
           >
-            {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-            Publish Product
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span>{loading ? (uploadStep || "Publishing...") : "Publish"}</span>
           </button>
-          {uploadStep && (
-            <p className="text-xs text-blue-600 font-medium animate-pulse">{uploadStep}</p>
-          )}
         </div>
       </div>
 
-      <div className="p-6 max-w-4xl mx-auto w-full space-y-6">
-        
-        {/* Basic Info Section */}
-        <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b border-slate-100 pb-2">Basic Information</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="col-span-2 md:col-span-1">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Product Name <span className="text-red-500">*</span></label>
-              <input 
-                type="text" 
-                value={name} onChange={e => setName(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
-                placeholder="MOTHERBOARD XYZ"
-              />
-            </div>
-            
-            <div className="col-span-2 md:col-span-1">
-              <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
-              <input 
-                type="text" 
-                value={sku} onChange={e => setSku(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
-                placeholder="MOTHERBOARD-001"
-              />
-            </div>
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto w-full space-y-4 sm:space-y-6 pb-20">
 
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-              <div className="relative">
-                <button 
-                  onClick={() => setShowCatDD(!showCatDD)}
-                  className="w-full flex items-center justify-between px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg text-left focus:ring-2 focus:ring-blue-500"
-                >
-                  <span className="text-slate-700">{selectedCatName}</span>
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
-                </button>
-                
-                {showCatDD && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowCatDD(false)} />
-                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-slate-200 shadow-xl rounded-xl z-20 overflow-hidden flex flex-col max-h-64">
-                      <div className="p-2 border-b border-slate-100">
-                        <input 
-                          type="text" 
-                          placeholder="Search categories..." 
-                          value={catSearch} onChange={e => setCatSearch(e.target.value)}
-                          className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div className="overflow-y-auto p-1 flex-1">
-                        {catTree.map(c => (
-                          <button
-                            key={c.id}
-                            onClick={() => { setSelCatId(c.id); setShowCatDD(false); }}
-                            className={`w-full text-left px-3 py-2 text-sm rounded-md hover:bg-slate-100 ${selCatId === c.id ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700"}`}
-                          >
-                            <span className="text-slate-300 mr-1">{'—'.repeat(c.depth)}</span>
-                            {c.name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
+        {/* ── Step 1: Basic Information ── */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
+            <h3 className="text-base sm:text-lg font-semibold text-slate-800">Informasi Dasar</h3>
+          </div>
+          <div className="p-4 sm:p-6 space-y-4">
+            {/* Product name + SKU */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Nama Produk <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={name} onChange={e => setName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-blue-400 outline-none transition-all text-sm"
+                  placeholder="MOTHERBOARD XYZ"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">SKU</label>
+                <input
+                  type="text"
+                  value={sku} onChange={e => setSku(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white focus:border-blue-400 outline-none transition-all text-sm"
+                  placeholder="MBD-001"
+                />
               </div>
             </div>
 
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Product Description</label>
-              <div className="rounded-lg overflow-hidden border border-slate-300 focus-within:ring-2 focus-within:ring-blue-500">
-                <div className="flex items-center gap-1 bg-slate-100 border-b border-slate-200 p-2">
-                  <button onClick={() => editor?.chain().focus().toggleBold().run()} className={`p-1.5 rounded hover:bg-slate-200 ${editor?.isActive('bold') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><Bold className="w-4 h-4" /></button>
-                  <button onClick={() => editor?.chain().focus().toggleItalic().run()} className={`p-1.5 rounded hover:bg-slate-200 ${editor?.isActive('italic') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><Italic className="w-4 h-4" /></button>
-                  <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                  <button onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`p-1.5 rounded hover:bg-slate-200 ${editor?.isActive('bulletList') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><List className="w-4 h-4" /></button>
-                  <button onClick={() => editor?.chain().focus().toggleOrderedList().run()} className={`p-1.5 rounded hover:bg-slate-200 ${editor?.isActive('orderedList') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><ListOrdered className="w-4 h-4" /></button>
+            {/* Category */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Kategori</label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowCatDD(!showCatDD)}
+                    className="w-full flex items-center justify-between px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-left hover:border-slate-400 focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+                  >
+                    <span className={selCatIds.length ? "text-slate-800 font-medium" : "text-slate-400"}>
+                      {selCatIds.length === 0
+                        ? "Pilih kategori..."
+                        : `${selCatIds.length} kategori dipilih`}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${showCatDD ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {showCatDD && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowCatDD(false)} />
+                      <div className="absolute top-full left-0 mt-1.5 w-full bg-white border border-slate-200 shadow-xl rounded-2xl z-20 overflow-hidden flex flex-col max-h-64">
+                        <div className="p-2 border-b border-slate-100 flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Cari kategori..."
+                            value={catSearch} onChange={e => setCatSearch(e.target.value)}
+                            className="flex-1 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                          {selCatIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setSelCatIds([])}
+                              className="text-xs text-red-500 hover:text-red-600 font-medium px-2 py-1.5 rounded-lg hover:bg-red-50 whitespace-nowrap transition-colors"
+                            >
+                              Hapus semua
+                            </button>
+                          )}
+                        </div>
+                        <div className="overflow-y-auto p-1.5 flex-1">
+                          {catTree.length === 0 ? (
+                            <p className="text-xs text-slate-400 text-center py-4">Tidak ada hasil</p>
+                          ) : catTree.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => setSelCatIds(prev => prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id])}
+                              className={`w-full text-left px-3 py-2 text-sm rounded-lg flex items-center gap-2 transition-colors ${selCatIds.includes(c.id) ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
+                            >
+                              <span className="text-slate-300 text-xs">{'—'.repeat(c.depth)}</span>
+                              <input type="checkbox" checked={selCatIds.includes(c.id)} readOnly className="rounded text-blue-600 focus:ring-blue-500 shrink-0" />
+                              <span className="truncate">{c.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {selCatIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelCatIds([])}
+                    title="Reset semua kategori"
+                    className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 border border-slate-300 rounded-xl transition-colors shrink-0"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Selected category chips */}
+              {selCatIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {categories.filter(c => selCatIds.includes(c.id)).map(c => (
+                    <span key={c.id} className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full font-medium">
+                      {c.name}
+                      <button
+                        type="button"
+                        onClick={() => setSelCatIds(prev => prev.filter(id => id !== c.id))}
+                        className="hover:text-blue-900 transition-colors ml-0.5"
+                      >
+                        <XIcon className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Deskripsi Produk</label>
+              <div className="rounded-xl overflow-hidden border border-slate-300 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-400 transition-all">
+                <div className="flex items-center gap-1 bg-slate-100 border-b border-slate-200 px-2 py-1.5">
+                  <button type="button" onClick={() => editor?.chain().focus().toggleBold().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('bold') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><Bold className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => editor?.chain().focus().toggleItalic().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('italic') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><Italic className="w-4 h-4" /></button>
+                  <div className="w-px h-4 bg-slate-300 mx-1" />
+                  <button type="button" onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('bulletList') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><List className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => editor?.chain().focus().toggleOrderedList().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('orderedList') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><ListOrdered className="w-4 h-4" /></button>
                 </div>
                 <EditorContent editor={editor} />
               </div>
@@ -440,351 +427,459 @@ export default function UploadProductPage() {
           </div>
         </section>
 
-        {/* Product Images Section */}
-        <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b border-slate-100 pb-2">
-            Gambar Produk
-          </h3>
-
-          {/* Upload area */}
-          <label className={`flex flex-col items-center justify-center gap-3 w-full py-8 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
-            uploadingImages
-              ? "border-blue-300 bg-blue-50"
-              : "border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/50"
-          }`}>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              disabled={uploadingImages}
-              onChange={(e) => e.target.files && handleImageUpload(e.target.files)}
-            />
-            {uploadingImages ? (
-              <>
-                <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
-                <span className="text-sm text-blue-600 font-medium">Mengupload gambar...</span>
-              </>
-            ) : (
-              <>
-                <ImagePlus className="w-8 h-8 text-slate-400" />
-                <div className="text-center">
-                  <p className="text-sm font-medium text-slate-600">Klik untuk pilih gambar</p>
-                  <p className="text-xs text-slate-400 mt-1">PNG, JPG, WebP — bisa pilih lebih dari satu</p>
-                </div>
-              </>
-            )}
-          </label>
-
-          {/* Ordered image list */}
-          {images.length > 0 && (
-            <div className="mt-4 space-y-2">
-              <p className="text-xs text-slate-400">
-                Gunakan <span className="font-semibold">↑ ↓</span> untuk mengatur urutan.
-                Gambar <span className="font-semibold text-blue-600">pertama = Featured Image</span> (tampil utama di toko).
-              </p>
-              <div className="space-y-1.5">
-                {images.map((img, i) => (
-                  <div key={img.id} className="flex items-center gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
-                    {/* Thumbnail */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img.src} alt={img.alt} className="w-14 h-14 object-cover rounded-lg shrink-0 border border-slate-200" />
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {i === 0 && (
-                          <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded-md font-bold tracking-wide">
-                            ★ Featured
-                          </span>
-                        )}
-                        <span className="text-xs text-slate-500 truncate">{img.alt}</span>
-                      </div>
-                      <p className="text-[10px] text-slate-300 mt-0.5 font-mono">ID: {img.id}</p>
-                    </div>
-                    {/* Controls */}
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <button type="button" onClick={() => moveImage(i, 'up')} disabled={i === 0}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-slate-200"
-                        title="Pindah ke atas">
-                        <ArrowUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" onClick={() => moveImage(i, 'down')} disabled={i === images.length - 1}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-slate-200"
-                        title="Pindah ke bawah">
-                        <ArrowDown className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" onClick={() => setImages(prev => prev.filter(x => x.id !== img.id))}
-                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
-                        title="Hapus gambar">
-                        <XIcon className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Product Data Section */}
-        <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-            <h3 className="text-lg font-semibold text-slate-800">Product Data</h3>
-            <select 
-              value={type} 
-              onChange={e => setType(e.target.value as any)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="simple">Simple Product</option>
-              <option value="variable">Variable Product</option>
-            </select>
+        {/* ── Step 2: Images ── */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0">2</span>
+            <h3 className="text-base sm:text-lg font-semibold text-slate-800">Gambar Produk</h3>
           </div>
-
-          {type === 'simple' && (
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Regular Price (Rp)</label>
-                <input 
-                  type="number" 
-                  value={regularPrice} onChange={e => setRegularPrice(e.target.value)}
-                  onWheel={e => (e.target as HTMLElement).blur()}
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="100000"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Sale Price (Rp)</label>
-                <input 
-                  type="number" 
-                  value={salePrice} onChange={e => setSalePrice(e.target.value)}
-                  onWheel={e => (e.target as HTMLElement).blur()}
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="80000"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Attributes Section */}
-          <div className={`mt-6 pt-4 ${type==='simple' ? 'border-t border-slate-100' : ''}`}>
-            <h4 className="text-md font-medium text-slate-800 mb-3">Attributes</h4>
-            
-            {selectedAttributes.map((attr, idx) => (
-              <div key={idx} className="flex flex-col md:flex-row gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl mb-3">
-                <div className="flex-1 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <select 
-                      value={attr.id}
-                      onChange={e => updateAttribute(idx, 'id', e.target.value)}
-                      className="w-1/3 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-sm"
-                    >
-                      {globalAttributes.length === 0 && <option value="0">Custom Attribute</option>}
-                      {globalAttributes.map(ga => (
-                        <option key={ga.id} value={ga.id}>{ga.name}</option>
-                      ))}
-                    </select>
-                    
-                    {attr.id === 0 && (
-                      <input 
-                        type="text" 
-                        placeholder="Attribute Name"
-                        value={attr.name}
-                        onChange={e => updateAttribute(idx, 'name', e.target.value)}
-                        className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-sm"
-                      />
-                    )}
-
-                    {type === 'variable' && (
-                      <label className="flex items-center gap-2 text-sm text-slate-600 ml-auto bg-white px-3 py-1.5 border border-slate-200 rounded-lg">
-                        <input 
-                          type="checkbox" 
-                          checked={attr.variation}
-                          onChange={e => updateAttribute(idx, 'variation', e.target.checked)}
-                          className="rounded text-blue-600"
-                        />
-                        Used for variations
-                      </label>
-                    )}
+          <div className="p-4 sm:p-6">
+            <label className={`flex flex-col items-center justify-center gap-2 w-full py-8 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+              uploadingImages ? "border-blue-300 bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/40"
+            }`}>
+              <input type="file" accept="image/*" multiple className="hidden" disabled={uploadingImages}
+                onChange={(e) => e.target.files && handleImageUpload(e.target.files)} />
+              {uploadingImages ? (
+                <>
+                  <RefreshCw className="w-7 h-7 text-blue-500 animate-spin" />
+                  <span className="text-sm text-blue-600 font-medium">Mengupload gambar...</span>
+                </>
+              ) : (
+                <>
+                  <ImagePlus className="w-7 h-7 text-slate-400" />
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-slate-600">Klik untuk pilih gambar</p>
+                    <p className="text-xs text-slate-400 mt-0.5">PNG, JPG, WebP · bisa pilih lebih dari satu</p>
                   </div>
-                  
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">Values</label>
-                    {attr.id === 0 ? (
-                      <textarea 
-                        value={attr.options}
-                        onChange={e => updateAttribute(idx, 'options', e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-blue-500 outline-none"
-                        placeholder="e.g. Red | Blue | Green or S, M, L"
-                        rows={2}
-                      />
-                    ) : loadingTerms[attr.id] ? (
-                      <div className="text-sm text-slate-400 py-2 flex items-center gap-2"><RefreshCw className="w-4 h-4 animate-spin"/> Loading terms...</div>
-                    ) : termsCache[attr.id]?.length > 0 ? (
-                      <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-white">
-                        {termsCache[attr.id].map(term => {
-                          const isChecked = attr.options.split(/[|,]/).map(s => s.trim()).includes(term.name);
-                          return (
-                            <label key={term.id} className="flex items-center gap-1.5 text-sm text-slate-700 bg-slate-50 px-2 py-1 rounded border border-slate-100 hover:bg-slate-100 cursor-pointer">
-                              <input 
-                                type="checkbox" 
-                                className="rounded text-blue-600"
-                                checked={isChecked}
-                                onChange={(e) => {
-                                  let current = attr.options.split(/[|,]/).map(s => s.trim()).filter(Boolean);
-                                  if (e.target.checked) {
-                                    if (!current.includes(term.name)) current.push(term.name);
-                                  } else {
-                                    current = current.filter(c => c !== term.name);
-                                  }
-                                  updateAttribute(idx, 'options', current.join(' | '));
-                                }}
-                              />
-                              {term.name}
-                            </label>
-                          );
-                        })}
+                </>
+              )}
+            </label>
+
+            {images.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs text-slate-400">
+                  Gunakan <span className="font-semibold">↑ ↓</span> untuk urutan.{" "}
+                  <span className="font-semibold text-blue-600">Gambar pertama = Featured Image.</span>
+                </p>
+                <div className="space-y-2">
+                  {images.map((img, i) => (
+                    <div key={img.id} className="flex items-center gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.src} alt={img.alt} className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-lg shrink-0 border border-slate-200" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {i === 0 && <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-bold">★ Featured</span>}
+                          <span className="text-xs text-slate-500 truncate">{img.alt}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-300 mt-0.5 font-mono">ID: {img.id}</p>
                       </div>
-                    ) : (
-                      <div className="text-sm text-slate-400 py-2">No terms found for this attribute.</div>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="flex items-start">
-                  <button 
-                    onClick={() => removeAttribute(idx)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    title="Remove Attribute"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            <button 
-              onClick={addAttribute}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-            >
-              <Plus className="w-4 h-4" /> Add Attribute
-            </button>
-          </div>
-
-          {/* Variations Generation (Only for Variable) */}
-          {type === 'variable' && (
-            <div className="mt-8 pt-6 border-t border-slate-200">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-md font-medium text-slate-800">Variations</h4>
-                <button 
-                  onClick={generateVariations}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm"
-                >
-                  <RefreshCw className="w-4 h-4" /> Generate Variations
-                </button>
-              </div>
-
-              {variations.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-12 gap-3 px-4 py-2 bg-slate-100 rounded-lg text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                    <div className="col-span-1">Img</div>
-                    <div className="col-span-3">Variasi</div>
-                    <div className="col-span-3">SKU</div>
-                    <div className="col-span-2">Harga Normal</div>
-                    <div className="col-span-2">Harga Coret</div>
-                    <div className="col-span-1"></div>
-                  </div>
-
-                  {variations.map((v, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-3 px-4 py-3 bg-white border border-slate-200 rounded-xl items-center shadow-sm">
-                      {/* Variation image */}
-                      <div className="col-span-1">
-                        <button
-                          type="button"
-                          onClick={() => setVarImgPickerOpen(i)}
-                          title="Pilih gambar untuk variasi ini"
-                          className={`w-10 h-10 rounded-lg border-2 overflow-hidden flex items-center justify-center transition-colors ${
-                            v.imageSrc
-                              ? 'border-blue-400 p-0'
-                              : 'border-dashed border-slate-300 hover:border-blue-400 bg-slate-50'
-                          }`}
-                        >
-                          {v.imageSrc
-                            // eslint-disable-next-line @next/next/no-img-element
-                            ? <img src={v.imageSrc} alt="" className="w-full h-full object-cover" />
-                            : <Camera className="w-4 h-4 text-slate-400" />
-                          }
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button type="button" onClick={() => moveImage(i, 'up')} disabled={i === 0}
+                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-slate-200">
+                          <ArrowUp className="w-3.5 h-3.5" />
                         </button>
-                      </div>
-                      <div className="col-span-3 flex flex-wrap gap-1 text-sm text-slate-700 font-medium">
-                        {v.attributes.map(a => a.option).join(' • ')}
-                      </div>
-                      <div className="col-span-3">
-                        <input
-                          type="text" value={v.sku}
-                          onChange={e => { const nv = [...variations]; nv[i].sku = e.target.value; setVariations(nv); }}
-                          className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                          placeholder="SKU"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <input
-                          type="number" value={v.regular_price}
-                          onChange={e => { const nv = [...variations]; nv[i].regular_price = e.target.value; setVariations(nv); }}
-                          onWheel={e => (e.target as HTMLElement).blur()}
-                          className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                          placeholder="Rp"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <input
-                          type="number" value={v.sale_price}
-                          onChange={e => { const nv = [...variations]; nv[i].sale_price = e.target.value; setVariations(nv); }}
-                          onWheel={e => (e.target as HTMLElement).blur()}
-                          className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm outline-none focus:ring-1 focus:ring-blue-500 text-red-600"
-                          placeholder="Rp"
-                        />
-                      </div>
-                      <div className="col-span-1 flex justify-end">
-                        <button type="button" onClick={() => { const nv = [...variations]; nv.splice(i, 1); setVariations(nv); }}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md">
-                          <Trash2 className="w-4 h-4" />
+                        <button type="button" onClick={() => moveImage(i, 'down')} disabled={i === images.length - 1}
+                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-slate-200">
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button type="button" onClick={() => setImages(prev => prev.filter(x => x.id !== img.id))}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200">
+                          <XIcon className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ── Step 3: Product Data ── */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0">3</span>
+              <h3 className="text-base sm:text-lg font-semibold text-slate-800">Data Produk</h3>
+            </div>
+
+            {/* Product type toggle */}
+            <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => { setType("simple"); setVariations([]); }}
+                className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all ${type === "simple" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Simple
+              </button>
+              <button
+                type="button"
+                onClick={() => setType("variable")}
+                className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all ${type === "variable" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Variable
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-6 space-y-6">
+            {/* Price (Simple only) */}
+            {type === 'simple' && (
+              <div className="grid grid-cols-2 gap-3 sm:gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Harga Normal (Rp)</label>
+                  <input
+                    type="number"
+                    value={regularPrice} onChange={e => setRegularPrice(e.target.value)}
+                    onWheel={e => (e.target as HTMLElement).blur()}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    placeholder="100000"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Harga Coret (Rp)</label>
+                  <input
+                    type="number"
+                    value={salePrice} onChange={e => setSalePrice(e.target.value)}
+                    onWheel={e => (e.target as HTMLElement).blur()}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    placeholder="80000"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Attributes */}
+            <div className={type === 'simple' ? "border-t border-slate-100 pt-6" : ""}>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-slate-700">Atribut Produk</h4>
+                <button
+                  type="button"
+                  onClick={addAttribute}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Tambah Atribut
+                </button>
+              </div>
+
+              {selectedAttributes.length === 0 ? (
+                <div className="text-center py-6 border border-dashed border-slate-200 rounded-xl">
+                  <p className="text-xs text-slate-400">Belum ada atribut. Klik "Tambah Atribut" untuk mulai.</p>
+                </div>
               ) : (
-                <div className="text-center py-8 bg-slate-50 border border-dashed border-slate-300 rounded-xl">
-                  <p className="text-slate-500 text-sm mb-2">No variations generated yet.</p>
-                  <p className="text-xs text-slate-400">Add attributes above, mark "Used for variations", and click "Generate Variations".</p>
+                <div className="space-y-3">
+                  {selectedAttributes.map((attr, idx) => (
+                    <div key={idx} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                      {/* Attribute header row */}
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 space-y-2">
+                          {/* Type selector + custom name */}
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <div className="flex items-center gap-2 flex-1">
+                              <select
+                                value={attr.id}
+                                onChange={e => updateAttribute(idx, 'id', e.target.value)}
+                                className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                              >
+                                <option value="0">Custom Attribute</option>
+                                {globalAttributes.map(ga => (
+                                  <option key={ga.id} value={ga.id}>{ga.name}</option>
+                                ))}
+                              </select>
+                              {/* Reset attribute to Custom */}
+                              {attr.id !== 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => updateAttribute(idx, 'id', "0")}
+                                  title="Reset ke Custom Attribute"
+                                  className="p-2 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg border border-slate-200 transition-colors shrink-0"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {attr.id === 0 && (
+                              <input
+                                type="text"
+                                placeholder="Nama atribut (e.g. Warna)"
+                                value={attr.name}
+                                onChange={e => updateAttribute(idx, 'name', e.target.value)}
+                                className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                            )}
+                          </div>
+
+                          {/* Used for variations toggle */}
+                          {type === 'variable' && (
+                            <label className="inline-flex items-center gap-2 text-sm text-slate-600 bg-white px-3 py-1.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={attr.variation}
+                                onChange={e => updateAttribute(idx, 'variation', e.target.checked)}
+                                className="rounded text-blue-600"
+                              />
+                              <span className="text-xs font-medium">Digunakan untuk variasi</span>
+                            </label>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeAttribute(idx)}
+                          className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200 shrink-0"
+                          title="Hapus atribut"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Values */}
+                      <div>
+                        {attr.id === 0 ? (
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-xs font-medium text-slate-500">Nilai (pisahkan dengan | atau ,)</label>
+                              {attr.options && (
+                                <button type="button" onClick={() => updateAttribute(idx, 'options', '')}
+                                  className="text-xs text-red-500 hover:text-red-600 hover:underline transition-colors">
+                                  Hapus semua
+                                </button>
+                              )}
+                            </div>
+                            <textarea
+                              value={attr.options}
+                              onChange={e => updateAttribute(idx, 'options', e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+                              placeholder="Contoh: Merah | Biru | Hijau  atau  S, M, L, XL"
+                              rows={2}
+                            />
+                          </div>
+                        ) : loadingTerms[attr.id] ? (
+                          <div className="flex items-center gap-2 text-sm text-slate-400 py-2">
+                            <RefreshCw className="w-4 h-4 animate-spin" /> Memuat pilihan...
+                          </div>
+                        ) : termsCache[attr.id]?.length > 0 ? (
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-xs font-medium text-slate-500">Pilih Values</label>
+                              <div className="flex items-center gap-2">
+                                <button type="button"
+                                  onClick={() => {
+                                    const all = termsCache[attr.id].map(t => t.name).join(' | ');
+                                    updateAttribute(idx, 'options', all);
+                                  }}
+                                  className="text-xs text-blue-500 hover:text-blue-600 hover:underline transition-colors">
+                                  Pilih semua
+                                </button>
+                                {attr.options && (
+                                  <>
+                                    <span className="text-slate-300">·</span>
+                                    <button type="button" onClick={() => updateAttribute(idx, 'options', '')}
+                                      className="text-xs text-red-500 hover:text-red-600 hover:underline transition-colors">
+                                      Hapus semua
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-2.5 border border-slate-200 rounded-lg bg-white">
+                              {termsCache[attr.id].map(term => {
+                                const isChecked = attr.options.split(/[|,]/).map(s => s.trim()).includes(term.name);
+                                return (
+                                  <label key={term.id} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors ${isChecked ? "bg-blue-50 border-blue-300 text-blue-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"}`}>
+                                    <input
+                                      type="checkbox"
+                                      className="rounded text-blue-600 w-3 h-3"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        let current = attr.options.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+                                        if (e.target.checked) { if (!current.includes(term.name)) current.push(term.name); }
+                                        else { current = current.filter(c => c !== term.name); }
+                                        updateAttribute(idx, 'options', current.join(' | '));
+                                      }}
+                                    />
+                                    {term.name}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-400 py-1">Tidak ada pilihan untuk atribut ini.</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          )}
-        </section>
 
+            {/* Variations (Variable only) */}
+            {type === 'variable' && (
+              <div className="border-t border-slate-100 pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-semibold text-slate-700">
+                    Variasi
+                    {variations.length > 0 && (
+                      <span className="ml-2 text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{variations.length} variasi</span>
+                    )}
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    {variations.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setVariations([])}
+                        title="Reset semua variasi"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg border border-red-200 transition-colors"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Reset
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={generateVariations}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Generate Variasi
+                    </button>
+                  </div>
+                </div>
+
+                {variations.length === 0 ? (
+                  <div className="text-center py-8 bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+                    <p className="text-sm text-slate-500 mb-1">Belum ada variasi.</p>
+                    <p className="text-xs text-slate-400">Tambah atribut, centang "Digunakan untuk variasi", lalu klik Generate.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* ── Desktop table ── */}
+                    <div className="hidden md:block space-y-2">
+                      <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-slate-100 rounded-lg text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        <div className="col-span-1">Img</div>
+                        <div className="col-span-3">Variasi</div>
+                        <div className="col-span-3">SKU</div>
+                        <div className="col-span-2">Harga Normal</div>
+                        <div className="col-span-2">Harga Coret</div>
+                        <div className="col-span-1" />
+                      </div>
+                      {variations.map((v, i) => (
+                        <div key={i} className="grid grid-cols-12 gap-2 px-3 py-2.5 bg-white border border-slate-200 rounded-xl items-center hover:border-slate-300 transition-colors">
+                          <div className="col-span-1">
+                            <button type="button" onClick={() => setVarImgPickerOpen(i)}
+                              className={`w-9 h-9 rounded-lg border-2 overflow-hidden flex items-center justify-center transition-colors ${v.imageSrc ? 'border-blue-400 p-0' : 'border-dashed border-slate-300 hover:border-blue-400 bg-slate-50'}`}>
+                              {v.imageSrc
+                                // eslint-disable-next-line @next/next/no-img-element
+                                ? <img src={v.imageSrc} alt="" className="w-full h-full object-cover" />
+                                : <Camera className="w-3.5 h-3.5 text-slate-400" />}
+                            </button>
+                          </div>
+                          <div className="col-span-3 text-sm font-medium text-slate-700 truncate">{v.attributes.map(a => a.option).join(' · ')}</div>
+                          <div className="col-span-3">
+                            <input type="text" value={v.sku}
+                              onChange={e => { const nv = [...variations]; nv[i].sku = e.target.value; setVariations(nv); }}
+                              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                              placeholder="SKU" />
+                          </div>
+                          <div className="col-span-2">
+                            <input type="number" value={v.regular_price}
+                              onChange={e => { const nv = [...variations]; nv[i].regular_price = e.target.value; setVariations(nv); }}
+                              onWheel={e => (e.target as HTMLElement).blur()}
+                              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                              placeholder="Rp" />
+                          </div>
+                          <div className="col-span-2">
+                            <input type="number" value={v.sale_price}
+                              onChange={e => { const nv = [...variations]; nv[i].sale_price = e.target.value; setVariations(nv); }}
+                              onWheel={e => (e.target as HTMLElement).blur()}
+                              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-red-600"
+                              placeholder="Rp" />
+                          </div>
+                          <div className="col-span-1 flex justify-end">
+                            <button type="button" onClick={() => { const nv = [...variations]; nv.splice(i, 1); setVariations(nv); }}
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ── Mobile cards ── */}
+                    <div className="md:hidden space-y-3">
+                      {variations.map((v, i) => (
+                        <div key={i} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2.5">
+                              <button type="button" onClick={() => setVarImgPickerOpen(i)}
+                                className={`w-9 h-9 rounded-lg border-2 overflow-hidden flex items-center justify-center transition-colors shrink-0 ${v.imageSrc ? 'border-blue-400 p-0' : 'border-dashed border-slate-300 bg-slate-50'}`}>
+                                {v.imageSrc
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  ? <img src={v.imageSrc} alt="" className="w-full h-full object-cover" />
+                                  : <Camera className="w-3.5 h-3.5 text-slate-400" />}
+                              </button>
+                              <span className="text-sm font-semibold text-slate-800">{v.attributes.map(a => a.option).join(' · ')}</span>
+                            </div>
+                            <button type="button" onClick={() => { const nv = [...variations]; nv.splice(i, 1); setVariations(nv); }}
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            <input type="text" value={v.sku}
+                              onChange={e => { const nv = [...variations]; nv[i].sku = e.target.value; setVariations(nv); }}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                              placeholder="SKU Variasi" />
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] text-slate-400 font-medium mb-1 block">Harga Normal</label>
+                                <input type="number" value={v.regular_price}
+                                  onChange={e => { const nv = [...variations]; nv[i].regular_price = e.target.value; setVariations(nv); }}
+                                  onWheel={e => (e.target as HTMLElement).blur()}
+                                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                                  placeholder="Rp" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-400 font-medium mb-1 block">Harga Coret</label>
+                                <input type="number" value={v.sale_price}
+                                  onChange={e => { const nv = [...variations]; nv[i].sale_price = e.target.value; setVariations(nv); }}
+                                  onWheel={e => (e.target as HTMLElement).blur()}
+                                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 text-red-600"
+                                  placeholder="Rp" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
       </div>
 
-      {/* Toast */}
+      {/* ── Toast ── */}
       {toast && (
-        <div className={`fixed bottom-4 right-4 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border text-sm font-medium z-50 ${
+        <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-4 sm:translate-x-0 flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium z-50 max-w-xs sm:max-w-sm w-full ${
           toast.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
           toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
           'bg-blue-50 border-blue-200 text-blue-800'
         }`}>
-          {toast.type === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> :
-           toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> :
-           <AlertCircle className="w-4 h-4 text-red-500" />}
-          {toast.msg}
+          {toast.type === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin shrink-0" /> :
+           toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" /> :
+           <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}
+          <span className="flex-1">{toast.msg}</span>
         </div>
       )}
 
-      {/* Variation image picker overlay */}
+      {/* ── Variation image picker ── */}
       {varImgPickerOpen !== null && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setVarImgPickerOpen(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setVarImgPickerOpen(null)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 w-full sm:max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h4 className="font-semibold text-slate-800">Pilih Gambar Variasi</h4>
+              <h4 className="font-semibold text-slate-800 text-sm">Pilih Gambar Variasi</h4>
               <button type="button" onClick={() => setVarImgPickerOpen(null)} className="p-1.5 hover:bg-slate-100 rounded-lg">
                 <XIcon className="w-4 h-4 text-slate-500" />
               </button>
@@ -793,18 +888,14 @@ export default function UploadProductPage() {
               <p className="text-sm text-slate-400 text-center py-6">Upload gambar produk dulu di bagian atas.</p>
             ) : (
               <div className="grid grid-cols-3 gap-2">
-                {/* Clear option */}
-                <button
-                  type="button"
+                <button type="button"
                   onClick={() => {
                     const idx = varImgPickerOpen;
                     setVariations(prev => prev.map((v, i) => i === idx ? { ...v, imageId: undefined, imageSrc: undefined } : v));
                     setVarImgPickerOpen(null);
                   }}
                   className={`aspect-square rounded-xl border-2 flex items-center justify-center text-xs font-medium transition-colors ${
-                    !variations[varImgPickerOpen]?.imageId
-                      ? 'border-blue-500 bg-blue-50 text-blue-600'
-                      : 'border-slate-200 text-slate-400 hover:border-slate-300'
+                    !variations[varImgPickerOpen]?.imageId ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-400 hover:border-slate-300'
                   }`}
                 >
                   Tidak ada
@@ -812,17 +903,13 @@ export default function UploadProductPage() {
                 {images.map(img => {
                   const selected = variations[varImgPickerOpen]?.imageId === img.id;
                   return (
-                    <button
-                      key={img.id}
-                      type="button"
+                    <button key={img.id} type="button"
                       onClick={() => {
                         const idx = varImgPickerOpen;
                         setVariations(prev => prev.map((v, i) => i === idx ? { ...v, imageId: img.id, imageSrc: img.src } : v));
                         setVarImgPickerOpen(null);
                       }}
-                      className={`aspect-square rounded-xl border-2 overflow-hidden transition-all ${
-                        selected ? 'border-blue-500 ring-2 ring-blue-300' : 'border-slate-200 hover:border-blue-300'
-                      }`}
+                      className={`aspect-square rounded-xl border-2 overflow-hidden transition-all ${selected ? 'border-blue-500 ring-2 ring-blue-300' : 'border-slate-200 hover:border-blue-300'}`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={img.src} alt={img.alt} className="w-full h-full object-cover" />

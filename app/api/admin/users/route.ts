@@ -87,6 +87,11 @@ export async function PATCH(req: NextRequest) {
     const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
     if (error) throw error;
 
+    // Kalau admin setujui (active), pastikan email juga ter-confirm di auth
+    if (status === "active") {
+      await supabase.auth.admin.updateUserById(userId, { email_confirm: true });
+    }
+
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });

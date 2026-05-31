@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
-import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X } from "lucide-react";
+import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal } from "lucide-react";
 
 function formatRp(raw: string | null | undefined) {
   if (!raw) return "—";
@@ -13,18 +13,18 @@ function formatRp(raw: string | null | undefined) {
   return "Rp " + num.toLocaleString("id-ID");
 }
 
-function MultiSelectDropdown({ 
-  options, 
-  selected, 
-  onChange, 
+function MultiSelectDropdown({
+  options,
+  selected,
+  onChange,
   placeholder,
-  searchPlaceholder 
-}: { 
-  options: string[], 
-  selected: string[], 
-  onChange: (val: string[]) => void, 
-  placeholder: string,
-  searchPlaceholder: string 
+  searchPlaceholder,
+}: {
+  options: string[];
+  selected: string[];
+  onChange: (val: string[]) => void;
+  placeholder: string;
+  searchPlaceholder: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -41,49 +41,63 @@ function MultiSelectDropdown({
   }, []);
 
   const filteredOptions = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
-
   const toggleOption = (opt: string) => {
-    if (selected.includes(opt)) {
-      onChange(selected.filter(s => s !== opt));
-    } else {
-      onChange([...selected, opt]);
-    }
+    onChange(selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt]);
   };
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <button 
+    <div className="relative w-full sm:w-auto" ref={dropdownRef}>
+      <button
         onClick={() => setIsOpen(!isOpen)}
-        className="px-4 py-2.5 w-full md:w-56 text-left border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm flex items-center justify-between transition-colors hover:border-blue-300"
+        className={`flex items-center justify-between gap-2 px-3 py-2.5 w-full sm:w-52 text-left border rounded-xl text-sm outline-none bg-white transition-colors ${
+          selected.length > 0
+            ? "border-blue-400 bg-blue-50 text-blue-700"
+            : "border-slate-200 text-slate-600 hover:border-slate-300"
+        }`}
       >
-        <span className="truncate">
-          {selected.length === 0 ? placeholder : `${selected.length} ${placeholder.replace("Semua ", "")} dipilih`}
+        <span className="truncate text-sm">
+          {selected.length === 0
+            ? placeholder
+            : `${selected.length} dipilih`}
         </span>
-        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        <div className="flex items-center gap-1 shrink-0">
+          {selected.length > 0 && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onChange([]); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onChange([]); }}}
+              className="p-0.5 hover:text-red-500 rounded transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </span>
+          )}
+          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        </div>
       </button>
-      
+
       {isOpen && (
-        <div className="absolute z-50 mt-2 w-full min-w-[260px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[350px]">
+        <div className="absolute z-50 mt-1.5 w-full min-w-[240px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[320px]">
           <div className="p-2 border-b border-slate-100 shrink-0">
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
-          <div className="overflow-y-auto p-2 flex-1">
+          <div className="overflow-y-auto p-1.5 flex-1">
             {filteredOptions.length === 0 ? (
               <p className="text-xs text-slate-400 text-center py-4">Tidak ditemukan</p>
             ) : (
               filteredOptions.map(opt => (
-                <label key={opt} className="flex items-center gap-2.5 px-2 py-2 hover:bg-slate-50 cursor-pointer rounded-lg text-sm transition-colors">
-                  <input 
-                    type="checkbox" 
+                <label key={opt} className="flex items-center gap-2.5 px-2.5 py-2 hover:bg-slate-50 cursor-pointer rounded-lg text-sm transition-colors">
+                  <input
+                    type="checkbox"
                     checked={selected.includes(opt)}
                     onChange={() => toggleOption(opt)}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
                   />
                   <span className="truncate text-slate-700">{opt}</span>
                 </label>
@@ -104,16 +118,14 @@ export default function UpdatePricesPage() {
   const [catFilter, setCatFilter] = useState<string[]>([]);
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
-
-  // Edits tracking
   const [edits, setEdits] = useState<Record<string, { cp: string; price: string }>>({});
   const [saving, setSaving] = useState(false);
 
-  // Extract unique filter options from loaded products
-  const uniqueCategories = Array.from(new Set(products.map(p => p["KATEGORI"]).filter(Boolean))).sort();
-  const uniqueBrands = Array.from(new Set(products.map(p => p["NAMA BRAND"]).filter(Boolean))).sort();
-  const uniqueStatuses = Array.from(new Set(products.map(p => p["STATUS"]).filter(Boolean))).sort();
+  const uniqueCategories = Array.from(new Set(products.map(p => p["KATEGORI"]).filter(Boolean))).sort() as string[];
+  const uniqueBrands = Array.from(new Set(products.map(p => p["NAMA BRAND"]).filter(Boolean))).sort() as string[];
+  const uniqueStatuses = Array.from(new Set(products.map(p => p["STATUS"]).filter(Boolean))).sort() as string[];
 
   const showToast = (msg: string, type: "success" | "error" | "loading") => {
     setToast({ msg, type });
@@ -146,9 +158,9 @@ export default function UpdatePricesPage() {
 
   const handleEditChange = (kode: string, field: "cp" | "price", value: string) => {
     setEdits((prev) => {
-      const current = prev[kode] || { 
-        cp: products.find(p => p["Kode Accurate"] === kode)?.["CP"] || "", 
-        price: products.find(p => p["Kode Accurate"] === kode)?.["PRICE"] || "" 
+      const current = prev[kode] || {
+        cp: products.find(p => p["Kode Accurate"] === kode)?.["CP"] || "",
+        price: products.find(p => p["Kode Accurate"] === kode)?.["PRICE"] || "",
       };
       return { ...prev, [kode]: { ...current, [field]: value } };
     });
@@ -160,37 +172,24 @@ export default function UpdatePricesPage() {
 
     setSaving(true);
     showToast(`Menyimpan ${keys.length} perubahan...`, "loading");
-    
-    const updates = keys.map(kode => ({
-      kode_accurate: kode,
-      cp: edits[kode].cp,
-      price: edits[kode].price
-    }));
 
     try {
       const res = await fetch("/api/sync/prices", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates }),
+        body: JSON.stringify({
+          updates: keys.map(kode => ({ kode_accurate: kode, cp: edits[kode].cp, price: edits[kode].price })),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
-      showToast("Perubahan harga berhasil disimpan!", "success");
-      
-      // Update local state to reflect new values and clear edits
+
       setProducts(prev => prev.map(p => {
-        if (edits[p["Kode Accurate"] || ""]) {
-          return {
-            ...p,
-            "CP": edits[p["Kode Accurate"] || ""].cp,
-            "PRICE": edits[p["Kode Accurate"] || ""].price
-          };
-        }
-        return p;
+        const e = edits[p["Kode Accurate"] || ""];
+        return e ? { ...p, "CP": e.cp, "PRICE": e.price } : p;
       }));
       setEdits({});
-      
+      showToast("Perubahan harga berhasil disimpan!", "success");
     } catch (err: unknown) {
       showToast("Gagal menyimpan: " + (err instanceof Error ? err.message : "error"), "error");
     } finally {
@@ -200,36 +199,36 @@ export default function UpdatePricesPage() {
 
   const filtered = products.filter((p) => {
     const q = search.toLowerCase();
-    const matchSearch = !search.trim() || 
+    const matchSearch = !search.trim() ||
       (p["Kode Accurate"] ?? "").toLowerCase().includes(q) ||
       (p["NAMA BARANG"] ?? "").toLowerCase().includes(q) ||
       (p["KATEGORI"] ?? "").toLowerCase().includes(q);
-
     const matchCat = catFilter.length === 0 || catFilter.includes(p["KATEGORI"] || "");
     const matchBrand = brandFilter.length === 0 || brandFilter.includes(p["NAMA BRAND"] || "");
-    const matchStatus = statusFilter.length === 0 || statusFilter.includes(p["STATUS"] || "Aktif"); // Default to Aktif if empty
-
+    const matchStatus = statusFilter.length === 0 || statusFilter.includes(p["STATUS"] || "Aktif");
     return matchSearch && matchCat && matchBrand && matchStatus;
   });
 
   const isAdmin = profile?.role === "admin";
   const hasEdits = Object.keys(edits).length > 0;
+  const activeFilterCount = catFilter.length + brandFilter.length + statusFilter.length;
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
-      {/* Topbar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white shrink-0 shadow-sm z-10 sticky top-0">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800">Update Harga Khusus</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Kelola Harga Modal (CP) dan Harga Dealer di sini. (Kategori: {isAdmin ? "Semua" : profile?.pic_category})
+
+      {/* ── Topbar ── */}
+      <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 shadow-sm sticky top-0 z-10">
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-xl font-bold text-slate-800 truncate">Update Harga</h2>
+          <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">
+            Harga Modal (CP) & Dealer · Kategori: {isAdmin ? "Semua" : profile?.pic_category}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => loadProducts(profile?.pic_category ?? null)}
             disabled={loading || saving}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">Refresh</span>
@@ -237,89 +236,120 @@ export default function UpdatePricesPage() {
           <button
             onClick={handleSaveAll}
             disabled={!hasEdits || saving}
-            className={`flex items-center gap-2 px-6 py-2 text-sm font-semibold text-white rounded-xl transition-all shadow-md ${
-              hasEdits && !saving ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/30" : "bg-slate-300 shadow-none cursor-not-allowed"
+            className={`flex items-center gap-1.5 px-3 sm:px-5 py-2 text-sm font-semibold text-white rounded-xl transition-all shadow-md ${
+              hasEdits && !saving
+                ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/30"
+                : "bg-slate-300 shadow-none cursor-not-allowed"
             }`}
           >
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Simpan Perubahan
+            <span>
+              {saving ? "Menyimpan..." : hasEdits ? `Simpan (${Object.keys(edits).length})` : "Simpan"}
+            </span>
           </button>
         </div>
       </div>
 
-      <div className="p-6 flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Filters */}
-        <div className="mb-4 flex flex-col md:flex-row gap-3 shrink-0 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+      {/* ── Filter Bar ── */}
+      <div className="px-4 py-3 sm:px-6 border-b border-slate-200 bg-white shrink-0">
+        {/* Search + toggle button (always visible) */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Cari kode, nama, kategori..."
+              placeholder="Cari kode, nama produk..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-10 pr-4 py-2.5 w-full border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm"
+              className="pl-9 pr-4 py-2.5 w-full border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
             />
           </div>
-          
-          <MultiSelectDropdown 
-            options={uniqueCategories as string[]}
+
+          {/* Mobile: toggle advanced filters */}
+          <button
+            onClick={() => setShowFilters(f => !f)}
+            className={`sm:hidden flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors border shrink-0 ${
+              activeFilterCount > 0 || showFilters
+                ? "bg-blue-50 border-blue-300 text-blue-700"
+                : "bg-white border-slate-200 text-slate-600"
+            }`}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            {activeFilterCount > 0 && (
+              <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Dropdown filters — always visible on sm+, toggle on mobile */}
+        <div className={`mt-2 flex-col sm:flex-row gap-2 flex-wrap ${showFilters ? "flex" : "hidden sm:flex"}`}>
+          <MultiSelectDropdown
+            options={uniqueCategories}
             selected={catFilter}
             onChange={setCatFilter}
             placeholder="Semua Kategori"
             searchPlaceholder="Cari Kategori..."
           />
-
-          <MultiSelectDropdown 
-            options={uniqueBrands as string[]}
+          <MultiSelectDropdown
+            options={uniqueBrands}
             selected={brandFilter}
             onChange={setBrandFilter}
             placeholder="Semua Brand"
             searchPlaceholder="Cari Brand..."
           />
-
-          <MultiSelectDropdown 
-            options={uniqueStatuses as string[]}
+          <MultiSelectDropdown
+            options={uniqueStatuses}
             selected={statusFilter}
             onChange={setStatusFilter}
             placeholder="Semua Status"
             searchPlaceholder="Cari Status..."
           />
-
-          {(catFilter.length > 0 || brandFilter.length > 0 || statusFilter.length > 0) && (
-            <button 
+          {activeFilterCount > 0 && (
+            <button
               onClick={() => { setCatFilter([]); setBrandFilter([]); setStatusFilter([]); }}
-              className="flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition-colors shrink-0"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-red-200 w-full sm:w-auto justify-center sm:justify-start"
             >
-              <X className="w-4 h-4" />
-              Reset Filter
+              <X className="w-3.5 h-3.5" /> Reset semua filter
             </button>
           )}
         </div>
 
-        {/* Product List */}
-        <div className="bg-white border border-slate-200 rounded-2xl flex-1 flex flex-col overflow-hidden shadow-sm">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center flex-1">
-              <RefreshCw className="w-8 h-8 animate-spin text-blue-500 mb-3" />
-              <p className="text-sm text-slate-500">Memuat data produk...</p>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center flex-1">
-              <AlertCircle className="w-10 h-10 text-slate-300 mb-3" />
-              <p className="text-slate-400 font-medium">Tidak ada produk ditemukan.</p>
-            </div>
-          ) : (
-            <div className="overflow-auto flex-1">
-              <table className="w-full text-sm text-left min-w-[800px]">
+        {/* Result count */}
+        {!loading && (
+          <p className="text-xs text-slate-400 mt-2">
+            {filtered.length} produk{hasEdits ? ` · ${Object.keys(edits).length} diubah` : ""}
+          </p>
+        )}
+      </div>
+
+      {/* ── Content ── */}
+      <div className="flex-1 overflow-auto">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center h-64">
+            <RefreshCw className="w-8 h-8 animate-spin text-blue-500 mb-3" />
+            <p className="text-sm text-slate-500">Memuat data produk...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64">
+            <AlertCircle className="w-10 h-10 text-slate-200 mb-3" />
+            <p className="text-slate-400 font-medium text-sm">Tidak ada produk ditemukan</p>
+          </div>
+        ) : (
+          <>
+            {/* ── Desktop table (sm+) ── */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm text-left min-w-[780px]">
                 <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
-                  <tr className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                     <th className="px-4 py-3">Produk</th>
-                    <th className="px-4 py-3 w-40">Harga SRP (SP)</th>
-                    <th className="px-4 py-3 w-48">Harga Modal (CP)</th>
-                    <th className="px-4 py-3 w-48">Harga Dealer (PRICE)</th>
+                    <th className="px-4 py-3 w-36">Harga SRP</th>
+                    <th className="px-4 py-3 w-44">Harga Modal (CP)</th>
+                    <th className="px-4 py-3 w-44">Harga Dealer</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 bg-white">
                   {filtered.map((p) => {
                     const kode = p["Kode Accurate"] ?? "";
                     const isEdited = edits[kode] !== undefined;
@@ -327,30 +357,37 @@ export default function UpdatePricesPage() {
                     const priceValue = isEdited ? edits[kode].price : (p["PRICE"] || "");
 
                     return (
-                      <tr key={kode} className={`hover:bg-slate-50 transition-colors ${isEdited ? "bg-blue-50/30" : ""}`}>
+                      <tr key={kode} className={`transition-colors ${isEdited ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
                         <td className="px-4 py-3">
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-mono font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{kode}</span>
-                              {p["KATEGORI"] && (
-                                <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-100">
-                                  {p["KATEGORI"]}
-                                </span>
-                              )}
-                            </div>
-                            <span className="font-semibold text-slate-800">{p["NAMA BARANG"]}</span>
+                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                            <span className="text-[11px] font-mono font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                              {kode}
+                            </span>
+                            {p["KATEGORI"] && (
+                              <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-100">
+                                {p["KATEGORI"]}
+                              </span>
+                            )}
+                            {isEdited && (
+                              <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full">
+                                ● Diubah
+                              </span>
+                            )}
                           </div>
+                          <span className="font-semibold text-slate-800 text-sm">{p["NAMA BARANG"]}</span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="font-semibold text-slate-600">{formatRp(p["SP"])}</span>
+                          <span className="text-sm font-semibold text-slate-600">{formatRp(p["SP"])}</span>
                         </td>
                         <td className="px-4 py-3">
                           <input
                             type="text"
                             value={cpValue}
                             onChange={(e) => handleEditChange(kode, "cp", e.target.value)}
-                            placeholder="Contoh: 1.500.000"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white"
+                            placeholder="e.g. 1.500.000"
+                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-colors ${
+                              isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                            }`}
                           />
                         </td>
                         <td className="px-4 py-3">
@@ -358,8 +395,10 @@ export default function UpdatePricesPage() {
                             type="text"
                             value={priceValue}
                             onChange={(e) => handleEditChange(kode, "price", e.target.value)}
-                            placeholder="Contoh: 1.800.000"
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white font-medium text-emerald-700"
+                            placeholder="e.g. 1.800.000"
+                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium text-emerald-700 transition-colors ${
+                              isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                            }`}
                           />
                         </td>
                       </tr>
@@ -368,24 +407,116 @@ export default function UpdatePricesPage() {
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
+
+            {/* ── Mobile cards (<sm) ── */}
+            <div className="sm:hidden p-3 space-y-2.5 pb-28">
+              {filtered.map((p) => {
+                const kode = p["Kode Accurate"] ?? "";
+                const isEdited = edits[kode] !== undefined;
+                const cpValue = isEdited ? edits[kode].cp : (p["CP"] || "");
+                const priceValue = isEdited ? edits[kode].price : (p["PRICE"] || "");
+
+                return (
+                  <div
+                    key={kode}
+                    className={`bg-white rounded-2xl border p-4 shadow-sm transition-colors ${
+                      isEdited ? "border-blue-300 bg-blue-50/20" : "border-slate-200"
+                    }`}
+                  >
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                            {kode}
+                          </span>
+                          {p["KATEGORI"] && (
+                            <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-100">
+                              {p["KATEGORI"]}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-semibold text-slate-800 text-sm leading-snug">{p["NAMA BARANG"]}</p>
+                      </div>
+                      {isEdited && (
+                        <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded-full shrink-0">
+                          Diubah
+                        </span>
+                      )}
+                    </div>
+
+                    {/* SRP (read-only) */}
+                    <div className="flex items-center justify-between py-2 border-b border-slate-100 mb-3">
+                      <span className="text-xs text-slate-500">Harga SRP</span>
+                      <span className="text-sm font-semibold text-slate-700">{formatRp(p["SP"])}</span>
+                    </div>
+
+                    {/* Editable fields */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+                          Modal (CP)
+                        </label>
+                        <input
+                          type="text"
+                          value={cpValue}
+                          onChange={(e) => handleEditChange(kode, "cp", e.target.value)}
+                          placeholder="e.g. 1.500.000"
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
+                            isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50"
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-emerald-600 mb-1.5 uppercase tracking-wide">
+                          Dealer
+                        </label>
+                        <input
+                          type="text"
+                          value={priceValue}
+                          onChange={(e) => handleEditChange(kode, "price", e.target.value)}
+                          placeholder="e.g. 1.800.000"
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm font-medium text-emerald-700 outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
+                            isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50"
+                          }`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Toast */}
+      {/* ── Mobile sticky save button ── */}
+      {hasEdits && (
+        <div className="sm:hidden fixed bottom-0 left-0 right-0 p-3 bg-white border-t border-slate-200 shadow-lg z-20">
+          <button
+            onClick={handleSaveAll}
+            disabled={saving}
+            className="w-full flex items-center justify-center gap-2 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-2xl transition-colors shadow-lg shadow-blue-500/30 disabled:opacity-70"
+          >
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? "Menyimpan..." : `Simpan ${Object.keys(edits).length} Perubahan`}
+          </button>
+        </div>
+      )}
+
+      {/* ── Toast ── */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 animate-in slide-in-from-bottom-4 ${
-          toast.type === "success" ? "bg-white border-green-200 text-green-800 shadow-green-100" :
-          toast.type === "error" ? "bg-white border-red-200 text-red-700 shadow-red-100" :
-          "bg-white border-blue-200 text-blue-700 shadow-blue-100"
+        <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-5 sm:translate-x-0 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 bg-white max-w-xs sm:max-w-sm w-full ${
+          toast.type === "success" ? "border-green-200 text-green-800 shadow-green-100" :
+          toast.type === "error"   ? "border-red-200 text-red-700 shadow-red-100" :
+                                     "border-blue-200 text-blue-700 shadow-blue-100"
         }`}>
           {toast.type === "loading"
-            ? <RefreshCw className="w-5 h-5 animate-spin text-blue-500 shrink-0" />
+            ? <RefreshCw className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
             : toast.type === "success"
-              ? <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
-              : <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-          }
-          {toast.msg}
+              ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+              : <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}
+          <span className="flex-1">{toast.msg}</span>
         </div>
       )}
     </div>
