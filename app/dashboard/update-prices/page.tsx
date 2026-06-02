@@ -198,11 +198,12 @@ export default function UpdatePricesPage() {
   };
 
   const filtered = products.filter((p) => {
-    const q = search.toLowerCase();
-    const matchSearch = !search.trim() ||
-      (p["Kode Accurate"] ?? "").toLowerCase().includes(q) ||
-      (p["NAMA BARANG"] ?? "").toLowerCase().includes(q) ||
-      (p["KATEGORI"] ?? "").toLowerCase().includes(q);
+    const q = search.toLowerCase().trim();
+    const tokens = q ? q.split(/\s+/) : [];
+    
+    const searchableText = `${p["Kode Accurate"] || ""} ${p["NAMA BARANG"] || ""} ${p["KATEGORI"] || ""}`.toLowerCase();
+    const matchSearch = tokens.length === 0 || tokens.every(token => searchableText.includes(token));
+
     const matchCat = catFilter.length === 0 || catFilter.includes(p["KATEGORI"] || "");
     const matchBrand = brandFilter.length === 0 || brandFilter.includes(p["NAMA BRAND"] || "");
     const matchStatus = statusFilter.length === 0 || statusFilter.includes(p["STATUS"] || "Aktif");
