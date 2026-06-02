@@ -645,8 +645,7 @@ export default function ManageProducts() {
                         )}
                       </div>
                     </th>
-                    <th className="px-3 py-2.5 hidden lg:table-cell">Harga Modal (CP)</th>
-                    <th className="px-3 py-2.5 hidden lg:table-cell">Harga Dealer (PRICE)</th>
+                    <th className="px-3 py-2.5 hidden lg:table-cell">Harga Potongan</th>
                     <th className="px-3 py-2.5">Kontrol</th>
                   </tr>
                 </thead>
@@ -836,12 +835,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
         </td>
         <td className="px-3 py-3 hidden lg:table-cell">
           <div className="text-xs font-medium text-slate-600">
-            {isVar ? <span className="text-slate-300">—</span> : formatRp(mappedPrices[p.id]?.cp)}
-          </div>
-        </td>
-        <td className="px-3 py-3 hidden lg:table-cell">
-          <div className="text-xs font-semibold text-emerald-600">
-            {isVar ? <span className="text-slate-300">—</span> : formatRp(mappedPrices[p.id]?.price)}
+            {isVar ? <span className="text-slate-300">—</span> : formatRp(mappedPrices[p.id]?.sp)}
           </div>
         </td>
         <td className="px-3 py-3">
@@ -947,12 +941,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                 </td>
                 <td className="px-3 py-2 hidden lg:table-cell">
                   <div className="text-[11px] font-medium text-slate-500">
-                    {formatRp(mappedPrices[v.id]?.cp)}
-                  </div>
-                </td>
-                <td className="px-3 py-2 hidden lg:table-cell">
-                  <div className="text-[11px] font-semibold text-emerald-600">
-                    {formatRp(mappedPrices[v.id]?.price)}
+                    {formatRp(mappedPrices[v.id]?.sp)}
                   </div>
                 </td>
                 <td className="px-3 py-2">

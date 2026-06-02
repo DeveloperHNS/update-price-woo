@@ -162,18 +162,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* User email + role badge */}
           {profile && (
             <div className="flex items-center gap-2.5 px-3 py-2.5 mb-2 bg-slate-800 rounded-xl">
-              <div className={`p-1.5 rounded-lg ${isAdmin ? "bg-amber-500/20" : "bg-blue-500/20"}`}>
+              <div className={`p-1.5 rounded-lg ${isAdmin ? "bg-amber-500/20" : profile?.role === "product_staff" ? "bg-purple-500/20" : "bg-blue-500/20"}`}>
                 {isAdmin
                   ? <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  : <User className="w-4 h-4 text-blue-400" />
+                  : profile?.role === "product_staff"
+                    ? <Users className="w-4 h-4 text-purple-400" />
+                    : <User className="w-4 h-4 text-blue-400" />
                 }
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-white font-medium truncate" title={profile.email}>
                   {profile.full_name || profile.email.split("@")[0]}
                 </div>
-                <div className={`text-[10px] font-semibold uppercase tracking-wider ${isAdmin ? "text-amber-400" : "text-blue-400"}`}>
-                  {isAdmin ? "Admin" : `PIC${profile.pic_category ? ` · ${profile.pic_category}` : ""}`}
+                <div className={`text-[10px] font-semibold uppercase tracking-wider ${isAdmin ? "text-amber-400" : profile?.role === "product_staff" ? "text-purple-400" : "text-blue-400"}`}>
+                  {isAdmin ? "Admin" : profile?.role === "product_staff" ? "Product Staff" : `PIC${profile.pic_category ? ` · ${profile.pic_category}` : ""}`}
                 </div>
               </div>
             </div>

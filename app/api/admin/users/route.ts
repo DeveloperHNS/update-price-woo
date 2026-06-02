@@ -72,7 +72,7 @@ export async function PATCH(req: NextRequest) {
     const { userId, status, role, pic_category } = await req.json() as {
       userId: string;
       status?: "pending" | "active" | "rejected";
-      role?: "admin" | "pic";
+      role?: "admin" | "pic" | "product_staff";
       pic_category?: "komponen" | "aksesoris" | "laptop" | null;
     };
 

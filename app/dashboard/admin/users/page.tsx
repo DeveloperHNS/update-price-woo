@@ -13,7 +13,7 @@ type ManagedUser = {
   id: string;
   email: string;
   full_name: string | null;
-  role: "admin" | "pic";
+  role: "admin" | "pic" | "product_staff";
   status: "pending" | "active" | "rejected";
   pic_category: PicCategory | null;
   created_at?: string;
@@ -189,10 +189,12 @@ export default function AdminUsersPage() {
                         >
                           {/* Top row: avatar + info + status badge */}
                           <div className="flex items-start gap-3">
-                            <div className={`p-2 rounded-xl shrink-0 ${u.role === "admin" ? "bg-amber-100" : "bg-blue-50"}`}>
+                            <div className={`p-2 rounded-xl shrink-0 ${u.role === "admin" ? "bg-amber-100" : u.role === "product_staff" ? "bg-purple-50" : "bg-blue-50"}`}>
                               {u.role === "admin"
                                 ? <ShieldCheck className="w-5 h-5 text-amber-600" />
-                                : <Briefcase className="w-5 h-5 text-blue-500" />
+                                : u.role === "product_staff"
+                                  ? <Users className="w-5 h-5 text-purple-600" />
+                                  : <Briefcase className="w-5 h-5 text-blue-500" />
                               }
                             </div>
 
@@ -206,9 +208,9 @@ export default function AdminUsersPage() {
                                   {cfg.label}
                                 </span>
                                 <span className={`text-[10px] px-1.5 py-px rounded font-semibold ${
-                                  u.role === "admin" ? "bg-amber-100 text-amber-700" : "bg-blue-50 text-blue-600"
+                                  u.role === "admin" ? "bg-amber-100 text-amber-700" : u.role === "product_staff" ? "bg-purple-100 text-purple-700" : "bg-blue-50 text-blue-600"
                                 }`}>
-                                  {u.role === "admin" ? "Admin" : "PIC"}
+                                  {u.role === "admin" ? "Admin" : u.role === "product_staff" ? "Product Staff" : "PIC"}
                                 </span>
                                 {isPic && u.pic_category && (
                                   <span className="text-[10px] px-1.5 py-px rounded font-medium bg-slate-100 text-slate-600">
@@ -263,7 +265,7 @@ export default function AdminUsersPage() {
 
                             {u.status === "active" && (
                               <>
-                                {isPic && (
+                                {u.role !== "admin" && (
                                   <button
                                     onClick={() => updateUser(u.id, { role: "admin", pic_category: null })}
                                     disabled={busy}
@@ -272,13 +274,22 @@ export default function AdminUsersPage() {
                                     <ShieldCheck className="w-3 h-3" /> Jadikan Admin
                                   </button>
                                 )}
-                                {u.role === "admin" && u.id !== profile.id && (
+                                {u.role !== "pic" && u.id !== profile.id && (
                                   <button
                                     onClick={() => updateUser(u.id, { role: "pic" })}
                                     disabled={busy}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 text-xs font-semibold rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
                                   >
                                     <Briefcase className="w-3 h-3" /> Jadikan PIC
+                                  </button>
+                                )}
+                                {u.role !== "product_staff" && u.id !== profile.id && (
+                                  <button
+                                    onClick={() => updateUser(u.id, { role: "product_staff", pic_category: null })}
+                                    disabled={busy}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 text-xs font-semibold rounded-lg hover:bg-purple-100 disabled:opacity-50 transition-colors"
+                                  >
+                                    <Users className="w-3 h-3" /> Jadikan Product Staff
                                   </button>
                                 )}
                                 <button

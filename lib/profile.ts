@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 
-export type UserRole = "admin" | "pic";
+export type UserRole = "admin" | "pic" | "product_staff";
 export type UserStatus = "pending" | "active" | "rejected";
 export type PicCategory = "komponen" | "aksesoris" | "laptop";
 
