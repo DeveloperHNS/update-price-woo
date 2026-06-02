@@ -164,7 +164,7 @@ export default function ManageProducts() {
           page,
           orderby: "date",
           order: "desc",
-          _fields: "id,name,sku,type,regular_price,parent,stock_status,status",
+          _fields: "id,name,sku,type,regular_price,sale_price,parent,stock_status,status",
         };
         if (debouncedSearch) params.search = debouncedSearch;
         if (selCatId !== null) params.category = selCatId;
@@ -215,7 +215,7 @@ export default function ManageProducts() {
           `products/${id}/variations`,
           "GET",
           undefined,
-          { _fields: "id,sku,regular_price,attributes,stock_status", per_page: 100, page: 1 }
+          { _fields: "id,sku,regular_price,sale_price,attributes,stock_status", per_page: 100, page: 1 }
         ) as WooVariation[];
         setVarCache(prev => ({ ...prev, [id]: vars }));
         fetchMappedPrices(vars.map(v => v.id));
@@ -255,7 +255,7 @@ export default function ManageProducts() {
       `products/${parentId}/variations`,
       "GET",
       undefined,
-      { _fields: "id,sku,regular_price,attributes,stock_status", per_page: 100, page: 1 }
+      { _fields: "id,sku,regular_price,sale_price,attributes,stock_status", per_page: 100, page: 1 }
     ) as WooVariation[];
     setVarCache((prev) => ({ ...prev, [parentId]: vars }));
     fetchMappedPrices(vars.map(v => v.id));
@@ -835,7 +835,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
         </td>
         <td className="px-3 py-3 hidden lg:table-cell">
           <div className="text-xs font-medium text-slate-600">
-            {isVar ? <span className="text-slate-300">—</span> : formatRp(mappedPrices[p.id]?.sp)}
+            {isVar ? <span className="text-slate-300">—</span> : <EditableCell id={p.id} field="sale_price" val={p.sale_price || ""} type="number" prodType="simple" prefix="Rp " productName={p.name} onUpdate={onUpdate} showToast={showToast} />}
           </div>
         </td>
         <td className="px-3 py-3">
@@ -941,7 +941,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                 </td>
                 <td className="px-3 py-2 hidden lg:table-cell">
                   <div className="text-[11px] font-medium text-slate-500">
-                    {formatRp(mappedPrices[v.id]?.sp)}
+                    <EditableCell id={v.id} parentId={p.id} field="sale_price" val={v.sale_price || ""} type="number" prodType="variation" prefix="Rp " productName={`${p.name} #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
                   </div>
                 </td>
                 <td className="px-3 py-2">
@@ -1173,7 +1173,7 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
 function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", productName = "", onUpdate, showToast }: {
   id: number;
   parentId?: number;
-  field: "sku" | "name" | "regular_price";
+  field: "sku" | "name" | "regular_price" | "sale_price";
   val: string;
   type: "text" | "number";
   prodType: "simple" | "variation";
@@ -1206,7 +1206,7 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", p
         
       await wooFetch(endpoint, 'PUT', { [field]: value });
       onUpdate(id, field, value, prodType, parentId);
-      const actionMap: Record<string, string> = { sku: "update_sku", name: "update_name", regular_price: "update_price" };
+      const actionMap: Record<string, string> = { sku: "update_sku", name: "update_name", regular_price: "update_price", sale_price: "update_sale_price" };
       logActivity({ action: actionMap[field] ?? `update_${field}`, product_id: id, product_name: productName || undefined, field, old_value: val || "", new_value: value });
       showToast("Saved successfully!", "success");
       setEditing(false);
