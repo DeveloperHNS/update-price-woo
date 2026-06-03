@@ -122,6 +122,13 @@ export default function UpdatePricesPage() {
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
   const [edits, setEdits] = useState<Record<string, { cp: string; price: string }>>({});
   const [saving, setSaving] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, catFilter, brandFilter, statusFilter]);
 
   const uniqueCategories = Array.from(new Set(products.map(p => p["KATEGORI"]).filter(Boolean))).sort() as string[];
   const uniqueBrands = Array.from(new Set(products.map(p => p["NAMA BRAND"]).filter(Boolean))).sort() as string[];
@@ -209,6 +216,9 @@ export default function UpdatePricesPage() {
     const matchStatus = statusFilter.length === 0 || statusFilter.includes(p["STATUS"] || "Aktif");
     return matchSearch && matchCat && matchBrand && matchStatus;
   });
+
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+  const paginatedProducts = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const isAdmin = profile?.role === "admin";
   const hasEdits = Object.keys(edits).length > 0;
@@ -351,7 +361,7 @@ export default function UpdatePricesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {filtered.map((p) => {
+                  {paginatedProducts.map((p) => {
                     const kode = p["Kode Accurate"] ?? "";
                     const isEdited = edits[kode] !== undefined;
                     const cpValue = isEdited ? edits[kode].cp : (p["CP"] || "");
@@ -410,8 +420,8 @@ export default function UpdatePricesPage() {
             </div>
 
             {/* ── Mobile cards (<sm) ── */}
-            <div className="sm:hidden p-3 space-y-2.5 pb-28">
-              {filtered.map((p) => {
+            <div className="sm:hidden p-3 space-y-2.5 pb-2">
+              {paginatedProducts.map((p) => {
                 const kode = p["Kode Accurate"] ?? "";
                 const isEdited = edits[kode] !== undefined;
                 const cpValue = isEdited ? edits[kode].cp : (p["CP"] || "");
@@ -490,6 +500,34 @@ export default function UpdatePricesPage() {
           </>
         )}
       </div>
+
+      {/* ── Pagination Controls ── */}
+      {totalPages > 1 && !loading && (
+        <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 bg-white border-t border-slate-200 shrink-0 gap-3 pb-24 sm:pb-3">
+          <p className="text-sm text-slate-500 hidden sm:block">
+            Menampilkan {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} dari {filtered.length} produk
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 bg-white"
+            >
+              Sebelumnya
+            </button>
+            <span className="text-sm font-medium text-slate-700 mx-2">
+              Hal {currentPage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 bg-white"
+            >
+              Selanjutnya
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Mobile sticky save button ── */}
       {hasEdits && (
