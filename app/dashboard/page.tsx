@@ -12,7 +12,7 @@ type WooCategory = {
   count: number;
 };
 
-const PER_PAGE = 20;
+const PER_PAGE = 50;
 type StockState = "instock" | "outofstock";
 
 function formatRp(raw: string | null | undefined) {
