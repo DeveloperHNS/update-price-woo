@@ -4,10 +4,10 @@
 
 // 1. Konfigurasi Webhook
 // Ganti dengan URL Vercel aplikasi kamu atau URL ngrok jika sedang testing lokal
-const WEBHOOK_URL = "https://domain-vercel-kamu.com/api/sheet/webhook"; 
+const WEBHOOK_URL = "https://update-price-woo.vercel.app/api/sheet/webhook";
 
 // Ganti dengan isi SHEET_WEBHOOK_SECRET dari file .env kamu
-const WEBHOOK_SECRET = "token_secret_kamu"; 
+const WEBHOOK_SECRET = "hns_super_secret_webhook_token_2026"; 
 
 // 2. Konfigurasi Posisi Kolom
 // Sesuaikan angka ini dengan posisi kolom di Spreadsheet kamu (A=1, B=2, C=3, dst)

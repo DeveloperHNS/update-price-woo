@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
-import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal } from "lucide-react";
+import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal, CloudDownload } from "lucide-react";
 
 function formatRp(raw: string | null | undefined) {
   if (!raw) return "—";
@@ -122,6 +122,7 @@ export default function UpdatePricesPage() {
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
   const [edits, setEdits] = useState<Record<string, { cp: string; price: string }>>({});
   const [saving, setSaving] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 50;
 
@@ -162,6 +163,27 @@ export default function UpdatePricesPage() {
       loadProducts(p?.pic_category ?? null);
     });
   }, [loadProducts]);
+
+  const handlePullSync = async () => {
+    if (!confirm("Tarik seluruh data dari Google Sheet? Proses ini mungkin butuh beberapa detik.")) return;
+    
+    setPulling(true);
+    showToast("Sedang menarik data dari Google Sheet...", "loading");
+    
+    try {
+      const res = await fetch("/api/sync/pull", { method: "POST" });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || "Gagal menarik data");
+      
+      showToast(data.message || `Berhasil ditarik!`, "success");
+      loadProducts(profile?.pic_category ?? null);
+    } catch (err: any) {
+      showToast(err.message, "error");
+    } finally {
+      setPulling(false);
+    }
+  };
 
   const handleEditChange = (kode: string, field: "cp" | "price", value: string) => {
     setEdits((prev) => {
@@ -236,6 +258,15 @@ export default function UpdatePricesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handlePullSync}
+            disabled={loading || saving || pulling}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors disabled:opacity-50"
+            title="Sedot semua data dari Google Sheet"
+          >
+            <CloudDownload className={`w-4 h-4 ${pulling ? "animate-pulse" : ""}`} />
+            <span className="hidden sm:inline">{pulling ? "Menyedot..." : "Sedot Data"}</span>
+          </button>
           <button
             onClick={() => loadProducts(profile?.pic_category ?? null)}
             disabled={loading || saving}
