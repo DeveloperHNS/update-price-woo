@@ -28,21 +28,36 @@ export async function GET(req: NextRequest) {
   }
 
   // Build products query — filter by KATEGORI based on PIC role
-  let query = supabase.from("products").select("*");
+  let allProducts: AccurateProduct[] = [];
+  let from = 0;
+  const step = 1000;
 
-  if (picCategory && PIC_CATEGORY_KEYWORDS[picCategory]) {
-    const keywords = PIC_CATEGORY_KEYWORDS[picCategory];
-    const orFilter = keywords.map((k) => `KATEGORI.ilike.%${k}%`).join(",");
-    query = query.or(orFilter);
+  while (true) {
+    let query = supabase.from("products").select("*").range(from, from + step - 1);
+
+    // Only fetch active products (STATUS = YA)
+    query = query.ilike("STATUS", "YA");
+
+    if (picCategory && PIC_CATEGORY_KEYWORDS[picCategory]) {
+      const keywords = PIC_CATEGORY_KEYWORDS[picCategory];
+      const orFilter = keywords.map((k) => `KATEGORI.ilike.%${k}%`).join(",");
+      query = query.or(orFilter);
+    }
+
+    const { data: products, error: prodErr } = await query;
+
+    if (prodErr) {
+      return NextResponse.json({ error: prodErr.message }, { status: 500 });
+    }
+
+    const batch = (products as AccurateProduct[]) || [];
+    allProducts = allProducts.concat(batch);
+
+    if (batch.length < step) {
+      break;
+    }
+    from += step;
   }
-
-  const { data: products, error: prodErr } = await query;
-
-  if (prodErr) {
-    return NextResponse.json({ error: prodErr.message }, { status: 500 });
-  }
-
-  const allProducts = (products as AccurateProduct[]) || [];
 
   const withStatus: ProductWithStatus[] = allProducts.map((p) => {
     const kode = p["Kode Accurate"] ?? "";
