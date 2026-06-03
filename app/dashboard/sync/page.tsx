@@ -221,7 +221,7 @@ export default function SyncPage() {
 
   const handleAutoMap = async () => {
     if (!profile) return;
-    const unmatched = products.filter(p => p._status === "unmatched" || !p.woo_product_id);
+    const unmatched = products.filter(p => p._status === "unmatched" || !p._mapping?.woo_product_id);
     if (unmatched.length === 0) {
       showToast("Tidak ada produk unmatched", "error");
       return;
