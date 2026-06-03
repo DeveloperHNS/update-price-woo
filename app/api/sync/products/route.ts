@@ -35,9 +35,6 @@ export async function GET(req: NextRequest) {
   while (true) {
     let query = supabase.from("products").select("*").range(from, from + step - 1);
 
-    // Only fetch active products (STATUS = YA)
-    query = query.ilike("STATUS", "YA");
-
     if (picCategory && PIC_CATEGORY_KEYWORDS[picCategory]) {
       const keywords = PIC_CATEGORY_KEYWORDS[picCategory];
       const orFilter = keywords.map((k) => `KATEGORI.ilike.%${k}%`).join(",");
