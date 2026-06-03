@@ -70,6 +70,10 @@ export default function SyncPage() {
   // Syncing price
   const [syncingPrice, setSyncingPrice] = useState<Set<string>>(new Set());
 
+  // Auto-mapping state
+  const [autoMapping, setAutoMapping] = useState(false);
+  const [autoMapProgress, setAutoMapProgress] = useState<{ total: number; current: number } | null>(null);
+
   const showToast = (msg: string, type: "success" | "error" | "loading") => {
     setToast({ msg, type });
     if (type !== "loading") setTimeout(() => setToast(null), 3500);
@@ -215,6 +219,48 @@ export default function SyncPage() {
     }
   };
 
+  const handleAutoMap = async () => {
+    if (!profile) return;
+    const unmatched = products.filter(p => p._status === "unmatched" || !p.woo_product_id);
+    if (unmatched.length === 0) {
+      showToast("Tidak ada produk unmatched", "error");
+      return;
+    }
+    if (!confirm(`Mulai Auto Map Cerdas untuk ${unmatched.length} produk? Proses ini memakan waktu beberapa menit.`)) return;
+
+    setAutoMapping(true);
+    setAutoMapProgress({ total: unmatched.length, current: 0 });
+
+    try {
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < unmatched.length; i += BATCH_SIZE) {
+        const batch = unmatched.slice(i, i + BATCH_SIZE).map(p => ({
+          kode: p["Kode Accurate"] || "",
+          nama: p["NAMA BARANG"] || ""
+        }));
+
+        const res = await fetch("/api/sync/automap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ products: batch, triggered_by: profile.id })
+        });
+        
+        if (!res.ok) {
+          console.error("Batch failed", await res.text());
+        }
+
+        setAutoMapProgress(prev => prev ? { ...prev, current: Math.min(prev.total, prev.current + BATCH_SIZE) } : null);
+      }
+      showToast("Auto Map selesai!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch (err: any) {
+      showToast("Auto Map error: " + err.message, "error");
+    } finally {
+      setAutoMapping(false);
+      setTimeout(() => setAutoMapProgress(null), 2000);
+    }
+  };
+
   const filtered = products.filter((p) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -237,15 +283,47 @@ export default function SyncPage() {
             {isAdmin ? "Semua kategori" : `Kategori: ${profile?.pic_category ?? "—"}`}
           </p>
         </div>
-        <button
-          onClick={() => loadProducts(tab, profile?.pic_category ?? null)}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {tab === "unmatched" && (
+            <button
+              onClick={handleAutoMap}
+              disabled={loading || autoMapping}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <Zap className={`w-4 h-4 ${autoMapping ? "animate-pulse text-amber-300" : ""}`} />
+              <span className="hidden sm:inline">{autoMapping ? "Memproses..." : "Auto Map Cerdas"}</span>
+            </button>
+          )}
+          <button
+            onClick={() => loadProducts(tab, profile?.pic_category ?? null)}
+            disabled={loading || autoMapping}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        </div>
       </div>
+
+      {/* Auto Map Progress Bar */}
+      {autoMapProgress && (
+        <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 shrink-0">
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-sm font-medium text-blue-800">
+              Proses Auto Map... ({autoMapProgress.current} / {autoMapProgress.total})
+            </span>
+            <span className="text-xs font-bold text-blue-600">
+              {Math.round((autoMapProgress.current / autoMapProgress.total) * 100)}%
+            </span>
+          </div>
+          <div className="w-full bg-blue-200 rounded-full h-2">
+            <div
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${Math.round((autoMapProgress.current / autoMapProgress.total) * 100)}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 shrink-0 px-4">
