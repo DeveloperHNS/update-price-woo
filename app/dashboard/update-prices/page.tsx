@@ -119,6 +119,7 @@ export default function UpdatePricesPage() {
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
+  const [confirmModal, setConfirmModal] = useState(false);
   const [edits, setEdits] = useState<Record<string, { cp: string; price: string }>>({});
   const [saving, setSaving] = useState(false);
   const [pulling, setPulling] = useState(false);
@@ -164,8 +165,7 @@ export default function UpdatePricesPage() {
   }, [loadProducts]);
 
   const handlePullSync = async () => {
-    if (!confirm("Tarik seluruh data dari Google Sheet? Proses ini mungkin butuh beberapa detik.")) return;
-
+    setConfirmModal(false);
     setPulling(true);
     showToast("Sedang menarik data dari Google Sheet...", "loading");
 
@@ -258,7 +258,7 @@ export default function UpdatePricesPage() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={handlePullSync}
+            onClick={() => setConfirmModal(true)}
             disabled={loading || saving || pulling}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors disabled:opacity-50"
             title="Import semua data dari Google Sheet"
@@ -578,6 +578,37 @@ export default function UpdatePricesPage() {
               ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
               : <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}
           <span className="flex-1">{toast.msg}</span>
+        </div>
+      )}
+
+      {/* ── Confirm Modal ── */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center mb-4">
+                <CloudDownload className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Import Data Sheet?</h3>
+              <p className="text-slate-500 text-sm leading-relaxed">
+                Aksi ini akan menyedot <b>seluruh data</b> (6000+ baris) dari Google Sheet kamu secara otomatis. Proses ini akan memakan waktu beberapa detik. Lanjutkan?
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button 
+                onClick={() => setConfirmModal(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={handlePullSync}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-lg shadow-blue-500/30 transition-colors flex items-center gap-2"
+              >
+                <CloudDownload className="w-4 h-4" /> Ya, Import Sekarang
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

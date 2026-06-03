@@ -3,15 +3,12 @@ import { createServiceClient } from "@/lib/supabase-server";
 import Papa from "papaparse";
 
 const COLUMNS = {
-  KODE_ACCURATE: 1, // Kolom B (Index 1 di Array)
-  NAMA_BARANG: 2,   // Kolom C
-  BARCODE: 4,       // Kolom E
-  KATEGORI: 5,      // Kolom F
-  BRAND: 6,         // Kolom G
-  STATUS: 7,        // Kolom H
-  CP: 8,            // Kolom I
-  SP: 9,            // Kolom J
-  PRICE: 10         // Kolom K
+  KODE_ACCURATE: 1, // Kolom 2 (Kode Accurate)
+  NAMA_BARANG: 2,   // Kolom 3 (NAMA BARANG)
+  BARCODE: 3,       // Kolom 4 (UPC/BARCODE)
+  KATEGORI: 4,      // Kolom 5 (NAMA KATEGORI)
+  BRAND: 5,         // Kolom 6 (NAMA BRAND)
+  STATUS: 6,        // Kolom 7 (STATUS)
 };
 
 export async function POST() {
@@ -58,10 +55,10 @@ export async function POST() {
         "KATEGORI": String(rowData[COLUMNS.KATEGORI] || "").trim() || null,
         "NAMA BRAND": String(rowData[COLUMNS.BRAND] || "").trim() || null,
         "STATUS": String(rowData[COLUMNS.STATUS] || "").trim() || null,
-        "CP": String(rowData[COLUMNS.CP] || "").trim() || null,
-        "SP": String(rowData[COLUMNS.SP] || "").trim() || null,
-        "PRICE": String(rowData[COLUMNS.PRICE] || "").trim() || null,
         "TANGGAL UPDATE": today,
+        // Kita biarkan CP, SP, dan PRICE tidak di-set (tidak ikut di-push)
+        // Agar Supabase TIDAK me-reset harga barang lama yang sudah di-setting ke 0
+        // Barang baru otomatis bernilai null (kosong) dan bisa diisi harga nanti
       });
     }
 
