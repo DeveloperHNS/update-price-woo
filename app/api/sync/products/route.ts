@@ -36,16 +36,43 @@ export async function GET(req: NextRequest) {
     let query = supabase.from("products").select("*").range(from, from + step - 1);
 
     if (picCategory) {
-      const categories = picCategory.split(",").map(s => s.trim());
-      const keywords: string[] = [];
-      for (const cat of categories) {
-        if (PIC_CATEGORY_KEYWORDS[cat]) {
-          keywords.push(...PIC_CATEGORY_KEYWORDS[cat]);
+      let erpCategories: string[] = [];
+      try {
+        if (picCategory.startsWith("{")) {
+          const parsed = JSON.parse(picCategory);
+          if (parsed.erp === "ALL") {
+            erpCategories = []; // no filter
+          } else if (parsed.erp) {
+            erpCategories = parsed.erp.split(",").map((s: string) => s.trim());
+          } else {
+             // they have no erp categories assigned
+            erpCategories = ["__NONE__"];
+          }
+        } else {
+          // old format or ALL
+          if (picCategory === "ALL") {
+            erpCategories = [];
+          } else {
+            // fallback for old pic_category which mapped to PIC_CATEGORY_KEYWORDS
+            const oldCategories = picCategory.split(",").map((s: string) => s.trim());
+            for (const cat of oldCategories) {
+              if (PIC_CATEGORY_KEYWORDS[cat]) {
+                erpCategories.push(...PIC_CATEGORY_KEYWORDS[cat]);
+              }
+            }
+          }
         }
+      } catch (e) {
+        // ignore
       }
-      if (keywords.length > 0) {
-        const orFilter = keywords.map((k) => `KATEGORI.ilike.%${k}%`).join(",");
-        query = query.or(orFilter);
+
+      if (erpCategories.length > 0) {
+        if (erpCategories.includes("__NONE__")) {
+           query = query.eq("KATEGORI", "__NONE__");
+        } else {
+           const orFilter = erpCategories.map((k) => `KATEGORI.ilike.%${k}%`).join(",");
+           query = query.or(orFilter);
+        }
       }
     }
 

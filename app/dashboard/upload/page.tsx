@@ -7,7 +7,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, ArrowUp, ArrowDown, Camera, RotateCcw } from "lucide-react";
-import { getCurrentProfile, type UserProfile } from "@/lib/profile";
+import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 
 export default function UploadProductPage() {
   const [loading, setLoading] = useState(false);
@@ -285,9 +285,22 @@ export default function UploadProductPage() {
   };
 
   const catTree = (() => {
+    const access = parseCategoryAccess(profile?.pic_category ?? null);
+    const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
+    let allowedCats = categories;
+
+    if (isRestricted) {
+      if (!access.woo) return [];
+      const allowedIds = access.woo.split(",").map(id => parseInt(id, 10));
+      allowedCats = categories.filter(c => allowedIds.includes(c.id));
+    }
+
     const buildTree = (parentId = 0, depth = 0): any[] =>
-      categories.filter(c => c.parent === parentId).flatMap(c => [{ ...c, depth }, ...buildTree(c.id, depth + 1)]);
-    const tree = buildTree();
+      allowedCats.filter(c => c.parent === parentId).flatMap(c => [{ ...c, depth }, ...buildTree(c.id, depth + 1)]);
+    
+    // If restricted, we just show a flat list if the parent isn't in their allowed list
+    const tree = isRestricted ? allowedCats.map(c => ({...c, depth: 0})) : buildTree();
+    
     if (!catSearch.trim()) return tree;
     return tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
   })();

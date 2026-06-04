@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { getCurrentProfile, UserProfile, PicCategory } from "@/lib/profile";
+import { getCurrentProfile, UserProfile, parseCategoryAccess } from "@/lib/profile";
+import { fetchAll } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import {
   Users, RefreshCw, ShieldCheck, CheckCircle2,
@@ -25,12 +26,6 @@ const STATUS_CFG = {
   rejected: { label: "Ditolak",   color: "bg-red-100 text-red-700 border-red-200",         icon: XCircle,       section: "bg-red-50 border-red-200" },
 };
 
-const PIC_CATEGORIES: { value: string; label: string }[] = [
-  { value: "komponen",  label: "Komponen" },
-  { value: "aksesoris", label: "Aksesoris" },
-  { value: "laptop",    label: "Laptop & Printer" },
-  { value: "dealer",    label: "Dealer" },
-];
 
 export default function AdminUsersPage() {
   const router = useRouter();
@@ -41,6 +36,8 @@ export default function AdminUsersPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; email: string } | null>(null);
+  const [wooCategories, setWooCategories] = useState<any[]>([]);
+  const [erpCategories, setErpCategories] = useState<string[]>([]);
 
   const showToast = (msg: string, type: "success" | "error") => {
     setToast({ msg, type });
@@ -62,6 +59,23 @@ export default function AdminUsersPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Gagal memuat user");
       const data = await res.json();
       setUsers(data.users as ManagedUser[]);
+      
+      try {
+        const cats = await fetchAll("products/categories");
+        setWooCategories(cats as any[]);
+      } catch (e: any) {
+        console.error("Gagal memuat kategori WooCommerce", e);
+      }
+      
+      try {
+        const erpRes = await fetch("/api/admin/erp-categories");
+        if (erpRes.ok) {
+          const erpData = await erpRes.json();
+          setErpCategories(erpData.categories || []);
+        }
+      } catch (e: any) {
+        console.error("Gagal memuat kategori ERP", e);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error");
     } finally {
@@ -200,6 +214,7 @@ export default function AdminUsersPage() {
                             </div>
 
                             <div className="flex-1 min-w-0">
+                              {/* Roles & Categories Display */}
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-semibold text-slate-800 text-sm truncate">
                                   {u.full_name || "—"}
@@ -213,43 +228,120 @@ export default function AdminUsersPage() {
                                 }`}>
                                   {u.role === "admin" ? "Admin" : u.role === "product_staff" ? "Product Staff" : "PIC"}
                                 </span>
-                                {isPic && u.pic_category && u.pic_category.split(",").map(cat => (
-                                  <span key={cat} className="text-[10px] px-1.5 py-px rounded font-medium bg-slate-100 text-slate-600">
-                                    {PIC_CATEGORIES.find(c => c.value === cat)?.label ?? cat}
-                                  </span>
-                                ))}
-                                {u.role === "product_staff" && u.pic_category && u.pic_category.split(",").map(cat => (
-                                  <span key={cat} className="text-[10px] px-1.5 py-px rounded font-medium bg-purple-100 text-purple-600">
-                                    {PIC_CATEGORIES.find(c => c.value === cat)?.label ?? cat}
-                                  </span>
-                                ))}
+                                
+                                {(isPic || u.role === "product_staff") && (() => {
+                                  const access = parseCategoryAccess(u.pic_category);
+                                  const colorClass = u.role === "product_staff" ? "bg-purple-100 text-purple-600" : "bg-slate-100 text-slate-600";
+                                  return (
+                                    <>
+                                      {/* WOO ACCESS */}
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[10px] text-slate-400 font-medium">Woo:</span>
+                                        {access.woo === "ALL" ? (
+                                          <span className="text-[10px] px-1.5 py-px rounded font-medium bg-emerald-100 text-emerald-700">Semua Kategori</span>
+                                        ) : access.woo ? access.woo.split(",").map(catId => {
+                                          const cName = wooCategories.find(c => c.id.toString() === catId)?.name || catId;
+                                          return (
+                                            <span key={`woo-${catId}`} className={`text-[10px] px-1.5 py-px rounded font-medium ${colorClass}`}>
+                                              {cName}
+                                            </span>
+                                          );
+                                        }) : <span className="text-[10px] text-slate-400 italic">Tidak ada</span>}
+                                      </div>
+                                      
+                                      {/* ERP ACCESS */}
+                                      <div className="flex items-center gap-1 ml-2">
+                                        <span className="text-[10px] text-slate-400 font-medium">ERP:</span>
+                                        {access.erp === "ALL" ? (
+                                          <span className="text-[10px] px-1.5 py-px rounded font-medium bg-emerald-100 text-emerald-700">Semua Kategori</span>
+                                        ) : access.erp ? access.erp.split(",").map(cat => (
+                                            <span key={`erp-${cat}`} className={`text-[10px] px-1.5 py-px rounded font-medium ${colorClass}`}>
+                                              {cat}
+                                            </span>
+                                        )) : <span className="text-[10px] text-slate-400 italic">Tidak ada</span>}
+                                      </div>
+                                    </>
+                                  );
+                                })()}
                               </div>
                               <p className="text-xs text-slate-400 truncate mt-0.5">{u.email}</p>
 
                               {/* PIC category selector */}
-                              {(isPic || u.role === "product_staff") && u.status === "active" && (
-                                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                                  <span className="text-[11px] text-slate-500 font-medium mr-1">Kategori:</span>
-                                  {PIC_CATEGORIES.map(c => {
-                                    const isSelected = u.pic_category?.split(",").includes(c.value);
-                                    return (
-                                      <button
-                                        key={c.value}
-                                        disabled={busy}
-                                        onClick={() => {
-                                          const currentArr = u.pic_category ? u.pic_category.split(",") : [];
-                                          const newArr = isSelected ? currentArr.filter(x => x !== c.value) : [...currentArr, c.value];
-                                          updateUser(u.id, { pic_category: newArr.join(",") || null });
-                                        }}
-                                        className={`text-[10px] px-2 py-1 rounded-md font-medium border transition-colors disabled:opacity-50 ${isSelected ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"}`}
-                                      >
-                                        {c.label}
-                                      </button>
-                                    );
-                                  })}
-                                  {busy && <RefreshCw className="w-3 h-3 animate-spin text-slate-400 ml-1" />}
+                              {(isPic || u.role === "product_staff") && u.status === "active" && (() => {
+                                const access = parseCategoryAccess(u.pic_category);
+                                const isAll = access.woo === "ALL" && access.erp === "ALL";
+                                
+                                return (
+                                <div className="mt-2.5 space-y-3 bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <button
+                                      disabled={busy}
+                                      onClick={() => updateUser(u.id, { pic_category: isAll ? null : "ALL" })}
+                                      className={`text-[10px] px-2 py-1 rounded-md font-bold border transition-colors disabled:opacity-50 ${isAll ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"}`}
+                                    >
+                                      AKSES SEMUA (DEALER / FULL)
+                                    </button>
+                                  </div>
+                                  
+                                  {!isAll && (
+                                    <>
+                                      {/* WooCommerce Access */}
+                                      <div className="space-y-1.5">
+                                        <span className="text-[11px] text-slate-500 font-medium block">Akses Website (WooCommerce):</span>
+                                        <div className="flex flex-wrap items-center gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-white border border-slate-200 rounded-lg">
+                                          {wooCategories.map(c => {
+                                            const isSelected = access.woo?.split(",").includes(c.id.toString());
+                                            return (
+                                              <button
+                                                key={`woo-${c.id}`}
+                                                disabled={busy}
+                                                onClick={() => {
+                                                  const currentArr = access.woo && access.woo !== "ALL" ? access.woo.split(",") : [];
+                                                  const newArr = isSelected ? currentArr.filter(x => x !== c.id.toString()) : [...currentArr, c.id.toString()];
+                                                  const newAccess = { ...access, woo: newArr.length ? newArr.join(",") : null };
+                                                  updateUser(u.id, { pic_category: JSON.stringify(newAccess) });
+                                                }}
+                                                className={`text-[10px] px-2 py-1 rounded-md font-medium border transition-colors disabled:opacity-50 ${isSelected ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"}`}
+                                              >
+                                                {c.name}
+                                              </button>
+                                            );
+                                          })}
+                                          {wooCategories.length === 0 && <span className="text-[10px] text-slate-400">Memuat kategori WooCommerce...</span>}
+                                        </div>
+                                      </div>
+
+                                      {/* ERP Access */}
+                                      <div className="space-y-1.5">
+                                        <span className="text-[11px] text-slate-500 font-medium block">Akses ERP / Accurate:</span>
+                                        <div className="flex flex-wrap items-center gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-white border border-slate-200 rounded-lg">
+                                          {erpCategories.map(cat => {
+                                            const isSelected = access.erp?.split(",").includes(cat);
+                                            return (
+                                              <button
+                                                key={`erp-${cat}`}
+                                                disabled={busy}
+                                                onClick={() => {
+                                                  const currentArr = access.erp && access.erp !== "ALL" ? access.erp.split(",") : [];
+                                                  const newArr = isSelected ? currentArr.filter(x => x !== cat) : [...currentArr, cat];
+                                                  const newAccess = { ...access, erp: newArr.length ? newArr.join(",") : null };
+                                                  updateUser(u.id, { pic_category: JSON.stringify(newAccess) });
+                                                }}
+                                                className={`text-[10px] px-2 py-1 rounded-md font-medium border transition-colors disabled:opacity-50 ${isSelected ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"}`}
+                                              >
+                                                {cat}
+                                              </button>
+                                            );
+                                          })}
+                                          {erpCategories.length === 0 && <span className="text-[10px] text-slate-400">Memuat kategori ERP...</span>}
+                                        </div>
+                                      </div>
+                                    </>
+                                  )}
+                                  {busy && <div className="flex items-center gap-1.5 text-xs text-slate-400"><RefreshCw className="w-3 h-3 animate-spin" /> Menyimpan...</div>}
                                 </div>
-                              )}
+                                );
+                              })()}
                             </div>
                           </div>
 

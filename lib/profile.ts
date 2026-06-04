@@ -13,6 +13,31 @@ export interface UserProfile {
   pic_category: string | null;
 }
 
+export interface CategoryAccess {
+  woo: string | "ALL" | null;
+  erp: string | "ALL" | null;
+}
+
+export function parseCategoryAccess(raw: string | null): CategoryAccess {
+  if (!raw) return { woo: null, erp: null };
+  if (raw === "ALL") return { woo: "ALL", erp: "ALL" };
+  
+  try {
+    if (raw.startsWith("{")) {
+      const parsed = JSON.parse(raw);
+      return {
+        woo: parsed.woo ?? null,
+        erp: parsed.erp ?? null
+      };
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // Fallback for old comma-separated woo categories
+  return { woo: raw, erp: null };
+}
+
 /**
  * Fetch the current authenticated user's profile (email + role + status).
  * Returns null if not authenticated.
@@ -37,7 +62,7 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
       role: (profile?.role as UserRole) ?? "pic",
       status: (profile?.status as UserStatus) ?? "pending",
       full_name: profile?.full_name ?? null,
-      pic_category: (profile?.pic_category as PicCategory) ?? null,
+      pic_category: profile?.pic_category ?? null,
     };
   } catch {
     return null;

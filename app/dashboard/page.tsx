@@ -5,7 +5,7 @@ import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib
 import { logActivity } from "@/lib/activity-log";
 import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2, ListTree } from "lucide-react";
 import VarEditModal from "./components/VarEditModal";
-import { getCurrentProfile, type UserProfile } from "@/lib/profile";
+import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 
 type WooCategory = {
   id: number;
@@ -174,7 +174,23 @@ export default function ManageProducts() {
           order: "desc",
           _fields: "id,name,sku,type,regular_price,sale_price,parent,stock_status,status",
         };
-        if (selCatId !== null) params.category = selCatId;
+        
+        const access = parseCategoryAccess(profile?.pic_category ?? null);
+        const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
+        
+        if (isRestricted && !access.woo) {
+          setProducts([]);
+          setHasNextPage(false);
+          setLoading(false);
+          return;
+        }
+
+        if (selCatId !== null) {
+          params.category = selCatId;
+        } else if (isRestricted) {
+          params.category = access.woo as string;
+        }
+
         let items: WooProduct[] = [];
         if (debouncedSearch) {
           const [searchRes, skuRes] = await Promise.all([
@@ -213,7 +229,7 @@ export default function ManageProducts() {
     };
 
     loadProductsPage();
-  }, [page, debouncedSearch, selCatId]);
+  }, [page, debouncedSearch, selCatId, profile?.pic_category, profile?.role]);
 
   const showToast = (msg: string, type: "success"|"error"|"loading") => {
     setToast({ msg, type });
@@ -249,17 +265,31 @@ export default function ManageProducts() {
     }
   };
 
-  // Build category tree for dropdown
   const catTree = useMemo(() => {
+    const access = parseCategoryAccess(profile?.pic_category ?? null);
+    const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
+    let allowedCats = categories;
+    
+    if (isRestricted) {
+      if (!access.woo) return [];
+      const allowedIds = access.woo.split(",").map(id => parseInt(id, 10));
+      allowedCats = categories.filter(c => allowedIds.includes(c.id));
+      let tree = allowedCats.map(c => ({ ...c, depth: 0 }));
+      if (catSearch.trim()) {
+        tree = tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
+      }
+      return tree;
+    }
+
     const buildTree = (parentId = 0, depth = 0): any[] => {
-      return categories
+      return allowedCats
         .filter(c => c.parent === parentId)
         .flatMap(c => [{ ...c, depth }, ...buildTree(c.id, depth + 1)]);
     };
     const tree = buildTree();
     if (!catSearch.trim()) return tree;
     return tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
-  }, [categories, catSearch]);
+  }, [categories, catSearch, profile]);
 
   const selectedCatName = selCatId === null 
     ? "All Categories" 
