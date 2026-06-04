@@ -7,12 +7,14 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, ArrowUp, ArrowDown, Camera, RotateCcw } from "lucide-react";
+import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 
 export default function UploadProductPage() {
   const [loading, setLoading] = useState(false);
   const [uploadStep, setUploadStep] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   // Product images
   const [images, setImages] = useState<{ id: number; src: string; alt: string }[]>([]);
@@ -67,6 +69,8 @@ export default function UploadProductPage() {
   const [varImgPickerOpen, setVarImgPickerOpen] = useState<number | null>(null);
 
   useEffect(() => {
+    getCurrentProfile().then(setProfile);
+    
     const loadWCData = async () => {
       try {
         const [cats, attrs] = await Promise.all([
@@ -115,15 +119,34 @@ export default function UploadProductPage() {
 
   const handleCreateCategory = async (catName: string) => {
     if (!catName.trim()) return;
+    setLoading(true);
     showToast(`Membuat kategori "${catName}"...`, "loading");
     try {
       const res = await wooFetch("products/categories", "POST", { name: catName });
       setCategories(prev => [...prev, res].sort((a: any, b: any) => a.parent - b.parent || a.name.localeCompare(b.name)));
       setSelCatIds(prev => [...prev, res.id]);
       setCatSearch("");
-      showToast(`Kategori ${catName} berhasil dibuat`, "success");
+      showToast("Kategori berhasil dibuat", "success");
     } catch (err: any) {
-      showToast(`Gagal membuat kategori: ${err.message}`, "error");
+      showToast("Gagal membuat kategori: " + err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = async (id: number, name: string) => {
+    if (!confirm(`Hapus kategori "${name}" secara permanen dari WooCommerce?`)) return;
+    setLoading(true);
+    showToast(`Menghapus kategori ${name}...`, "loading");
+    try {
+      await wooFetch(`products/categories/${id}`, "DELETE", undefined, { force: true });
+      setCategories(prev => prev.filter(c => c.id !== id));
+      setSelCatIds(prev => prev.filter(cid => cid !== id));
+      showToast("Kategori berhasil dihapus", "success");
+    } catch (err: any) {
+      showToast("Gagal menghapus kategori: " + err.message, "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -376,16 +399,27 @@ export default function UploadProductPage() {
                           {catTree.length === 0 ? (
                             <p className="text-xs text-slate-400 text-center py-4">Kategori tidak ditemukan</p>
                           ) : catTree.map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => setSelCatIds(prev => prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id])}
-                              className={`w-full text-left px-3 py-2 text-sm rounded-lg flex items-center gap-2 transition-colors ${selCatIds.includes(c.id) ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
-                            >
-                              <span className="text-slate-300 text-xs">{'—'.repeat(c.depth)}</span>
-                              <input type="checkbox" checked={selCatIds.includes(c.id)} readOnly className="rounded text-blue-600 focus:ring-blue-500 shrink-0" />
-                              <span className="truncate">{c.name}</span>
-                            </button>
+                            <div key={c.id} className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelCatIds(prev => prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id])}
+                                className={`flex-1 text-left px-3 py-2 text-sm rounded-lg flex items-center gap-2 transition-colors ${selCatIds.includes(c.id) ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
+                              >
+                                <span className="text-slate-300 text-xs">{'—'.repeat(c.depth)}</span>
+                                <input type="checkbox" checked={selCatIds.includes(c.id)} readOnly className="rounded text-blue-600 focus:ring-blue-500 shrink-0" />
+                                <span className="truncate">{c.name}</span>
+                              </button>
+                              {profile?.role === 'admin' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteCategory(c.id, c.name); }}
+                                  className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                                  title="Hapus Kategori"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           ))}
                           
                           {/* Create New Category Button */}
