@@ -73,7 +73,7 @@ export async function PATCH(req: NextRequest) {
       userId: string;
       status?: "pending" | "active" | "rejected";
       role?: "admin" | "pic" | "product_staff";
-      pic_category?: "komponen" | "aksesoris" | "laptop" | null;
+      pic_category?: "komponen" | "aksesoris" | "laptop" | "dealer" | null;
     };
 
     if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });

@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 
 export type UserRole = "admin" | "pic" | "product_staff";
 export type UserStatus = "pending" | "active" | "rejected";
-export type PicCategory = "komponen" | "aksesoris" | "laptop";
+export type PicCategory = "komponen" | "aksesoris" | "laptop" | "dealer";
 
 export interface UserProfile {
   id: string;

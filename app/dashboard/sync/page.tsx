@@ -291,6 +291,7 @@ export default function SyncPage() {
   });
 
   const isAdmin = profile?.role === "admin";
+  const canViewCP = profile?.role !== "product_staff" || profile?.pic_category === "dealer";
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -445,7 +446,7 @@ export default function SyncPage() {
                           Dealer: <span className="font-semibold">{formatRp(p["PRICE"])}</span>
                         </span>
                       )}
-                      {p["CP"] && (
+                      {canViewCP && p["CP"] && (
                         <span className="text-xs text-slate-400">
                           Modal: {formatRp(p["CP"])}
                         </span>
@@ -589,7 +590,7 @@ export default function SyncPage() {
                       <p className="text-sm font-bold text-emerald-700">{formatRp(matchTarget["PRICE"])}</p>
                     </div>
                   )}
-                  {matchTarget["CP"] && (
+                  {canViewCP && matchTarget["CP"] && (
                     <div>
                       <p className="text-[10px] text-slate-400">Modal (CP)</p>
                       <p className="text-xs text-slate-600">{formatRp(matchTarget["CP"])}</p>

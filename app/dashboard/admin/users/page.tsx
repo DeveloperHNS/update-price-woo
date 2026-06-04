@@ -29,6 +29,7 @@ const PIC_CATEGORIES: { value: PicCategory; label: string }[] = [
   { value: "komponen",  label: "Komponen" },
   { value: "aksesoris", label: "Aksesoris" },
   { value: "laptop",    label: "Laptop & Printer" },
+  { value: "dealer",    label: "Dealer" },
 ];
 
 export default function AdminUsersPage() {
@@ -217,11 +218,16 @@ export default function AdminUsersPage() {
                                     {PIC_CATEGORIES.find(c => c.value === u.pic_category)?.label ?? u.pic_category}
                                   </span>
                                 )}
+                                {u.role === "product_staff" && u.pic_category && (
+                                  <span className="text-[10px] px-1.5 py-px rounded font-medium bg-purple-100 text-purple-600">
+                                    {PIC_CATEGORIES.find(c => c.value === u.pic_category)?.label ?? u.pic_category}
+                                  </span>
+                                )}
                               </div>
                               <p className="text-xs text-slate-400 truncate mt-0.5">{u.email}</p>
 
                               {/* PIC category selector */}
-                              {isPic && u.status === "active" && (
+                              {(isPic || u.role === "product_staff") && u.status === "active" && (
                                 <div className="flex items-center gap-2 mt-2.5">
                                   <span className="text-[11px] text-slate-500 font-medium">Kategori:</span>
                                   <select
