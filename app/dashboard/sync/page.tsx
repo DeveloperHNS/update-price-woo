@@ -291,7 +291,7 @@ export default function SyncPage() {
   });
 
   const isAdmin = profile?.role === "admin";
-  const canViewCP = profile?.role !== "product_staff" || profile?.pic_category === "dealer";
+  const canViewCP = profile?.role !== "product_staff" || (profile?.pic_category && profile.pic_category.split(",").includes("dealer"));
 
   return (
     <div className="flex flex-col h-full bg-white">

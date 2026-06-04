@@ -15,7 +15,7 @@ type ManagedUser = {
   full_name: string | null;
   role: "admin" | "pic" | "product_staff";
   status: "pending" | "active" | "rejected";
-  pic_category: PicCategory | null;
+  pic_category: string | null;
   created_at?: string;
 };
 
@@ -25,7 +25,7 @@ const STATUS_CFG = {
   rejected: { label: "Ditolak",   color: "bg-red-100 text-red-700 border-red-200",         icon: XCircle,       section: "bg-red-50 border-red-200" },
 };
 
-const PIC_CATEGORIES: { value: PicCategory; label: string }[] = [
+const PIC_CATEGORIES: { value: string; label: string }[] = [
   { value: "komponen",  label: "Komponen" },
   { value: "aksesoris", label: "Aksesoris" },
   { value: "laptop",    label: "Laptop & Printer" },
@@ -213,35 +213,41 @@ export default function AdminUsersPage() {
                                 }`}>
                                   {u.role === "admin" ? "Admin" : u.role === "product_staff" ? "Product Staff" : "PIC"}
                                 </span>
-                                {isPic && u.pic_category && (
-                                  <span className="text-[10px] px-1.5 py-px rounded font-medium bg-slate-100 text-slate-600">
-                                    {PIC_CATEGORIES.find(c => c.value === u.pic_category)?.label ?? u.pic_category}
+                                {isPic && u.pic_category && u.pic_category.split(",").map(cat => (
+                                  <span key={cat} className="text-[10px] px-1.5 py-px rounded font-medium bg-slate-100 text-slate-600">
+                                    {PIC_CATEGORIES.find(c => c.value === cat)?.label ?? cat}
                                   </span>
-                                )}
-                                {u.role === "product_staff" && u.pic_category && (
-                                  <span className="text-[10px] px-1.5 py-px rounded font-medium bg-purple-100 text-purple-600">
-                                    {PIC_CATEGORIES.find(c => c.value === u.pic_category)?.label ?? u.pic_category}
+                                ))}
+                                {u.role === "product_staff" && u.pic_category && u.pic_category.split(",").map(cat => (
+                                  <span key={cat} className="text-[10px] px-1.5 py-px rounded font-medium bg-purple-100 text-purple-600">
+                                    {PIC_CATEGORIES.find(c => c.value === cat)?.label ?? cat}
                                   </span>
-                                )}
+                                ))}
                               </div>
                               <p className="text-xs text-slate-400 truncate mt-0.5">{u.email}</p>
 
                               {/* PIC category selector */}
                               {(isPic || u.role === "product_staff") && u.status === "active" && (
-                                <div className="flex items-center gap-2 mt-2.5">
-                                  <span className="text-[11px] text-slate-500 font-medium">Kategori:</span>
-                                  <select
-                                    value={u.pic_category ?? ""}
-                                    disabled={busy}
-                                    onChange={e => updateUser(u.id, { pic_category: e.target.value as PicCategory })}
-                                    className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:ring-1 focus:ring-blue-400 outline-none disabled:opacity-50 transition-colors"
-                                  >
-                                    <option value="" disabled>Pilih kategori...</option>
-                                    {PIC_CATEGORIES.map(c => (
-                                      <option key={c.value} value={c.value}>{c.label}</option>
-                                    ))}
-                                  </select>
-                                  {busy && <RefreshCw className="w-3 h-3 animate-spin text-slate-400" />}
+                                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                  <span className="text-[11px] text-slate-500 font-medium mr-1">Kategori:</span>
+                                  {PIC_CATEGORIES.map(c => {
+                                    const isSelected = u.pic_category?.split(",").includes(c.value);
+                                    return (
+                                      <button
+                                        key={c.value}
+                                        disabled={busy}
+                                        onClick={() => {
+                                          const currentArr = u.pic_category ? u.pic_category.split(",") : [];
+                                          const newArr = isSelected ? currentArr.filter(x => x !== c.value) : [...currentArr, c.value];
+                                          updateUser(u.id, { pic_category: newArr.join(",") || null });
+                                        }}
+                                        className={`text-[10px] px-2 py-1 rounded-md font-medium border transition-colors disabled:opacity-50 ${isSelected ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"}`}
+                                      >
+                                        {c.label}
+                                      </button>
+                                    );
+                                  })}
+                                  {busy && <RefreshCw className="w-3 h-3 animate-spin text-slate-400 ml-1" />}
                                 </div>
                               )}
                             </div>

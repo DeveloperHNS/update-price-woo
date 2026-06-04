@@ -10,7 +10,7 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   full_name: string | null;
-  pic_category: PicCategory | null;
+  pic_category: string | null;
 }
 
 /**

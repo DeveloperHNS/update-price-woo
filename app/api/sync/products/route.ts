@@ -35,10 +35,18 @@ export async function GET(req: NextRequest) {
   while (true) {
     let query = supabase.from("products").select("*").range(from, from + step - 1);
 
-    if (picCategory && PIC_CATEGORY_KEYWORDS[picCategory]) {
-      const keywords = PIC_CATEGORY_KEYWORDS[picCategory];
-      const orFilter = keywords.map((k) => `KATEGORI.ilike.%${k}%`).join(",");
-      query = query.or(orFilter);
+    if (picCategory) {
+      const categories = picCategory.split(",").map(s => s.trim());
+      const keywords: string[] = [];
+      for (const cat of categories) {
+        if (PIC_CATEGORY_KEYWORDS[cat]) {
+          keywords.push(...PIC_CATEGORY_KEYWORDS[cat]);
+        }
+      }
+      if (keywords.length > 0) {
+        const orFilter = keywords.map((k) => `KATEGORI.ilike.%${k}%`).join(",");
+        query = query.or(orFilter);
+      }
     }
 
     const { data: products, error: prodErr } = await query;
