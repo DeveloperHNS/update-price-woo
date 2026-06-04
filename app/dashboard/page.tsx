@@ -166,10 +166,24 @@ export default function ManageProducts() {
           order: "desc",
           _fields: "id,name,sku,type,regular_price,sale_price,parent,stock_status,status",
         };
-        if (debouncedSearch) params.search = debouncedSearch;
         if (selCatId !== null) params.category = selCatId;
+        let items: WooProduct[] = [];
+        if (debouncedSearch) {
+          const [searchRes, skuRes] = await Promise.all([
+            wooFetch("products", "GET", undefined, { ...params, search: debouncedSearch }),
+            wooFetch("products", "GET", undefined, { ...params, sku: debouncedSearch })
+          ]);
+          
+          const combined = [...(searchRes as WooProduct[]), ...(skuRes as WooProduct[])];
+          const uniqueMap = new Map<number, WooProduct>();
+          combined.forEach(p => {
+            if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
+          });
+          items = Array.from(uniqueMap.values());
+        } else {
+          items = await wooFetch("products", "GET", undefined, params) as WooProduct[];
+        }
 
-        const items = await wooFetch("products", "GET", undefined, params) as WooProduct[];
         const parentProducts = items.filter((item) => !item.parent || item.parent === 0);
         setProducts(parentProducts);
         setHasNextPage(items.length === PER_PAGE);
