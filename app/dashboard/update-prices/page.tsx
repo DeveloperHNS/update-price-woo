@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal, CloudDownload } from "lucide-react";
@@ -110,6 +111,7 @@ function MultiSelectDropdown({
 }
 
 export default function UpdatePricesPage() {
+  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [products, setProducts] = useState<ProductWithStatus[]>([]);
   const [loading, setLoading] = useState(false);
@@ -159,10 +161,14 @@ export default function UpdatePricesPage() {
 
   useEffect(() => {
     getCurrentProfile().then((p) => {
+      if (p?.role === "product_staff") {
+        router.replace("/dashboard");
+        return;
+      }
       setProfile(p);
       loadProducts(p?.pic_category ?? null);
     });
-  }, [loadProducts]);
+  }, [loadProducts, router]);
 
   const handlePullSync = async () => {
     setConfirmModal(false);

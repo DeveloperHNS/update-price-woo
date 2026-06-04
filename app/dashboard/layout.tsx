@@ -45,9 +45,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const isAdmin = profile?.role === "admin";
 
+  const isProductStaff = profile?.role === "product_staff";
+
   const navItems = [
     { name: "Manage Products", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Update Harga", href: "/dashboard/update-prices", icon: DollarSign },
+    ...(!isProductStaff ? [{ name: "Update Harga", href: "/dashboard/update-prices", icon: DollarSign }] : []),
     { name: "Upload Product", href: "/dashboard/upload", icon: UploadCloud },
     { name: "Sync Product", href: "/dashboard/sync", icon: ArrowLeftRight },
     // Activity Logs — hanya admin yang bisa lihat

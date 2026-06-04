@@ -20,6 +20,37 @@ function getUniqueKeywords(name: string) {
   return uniques.slice(0, 2).join(" "); // Ambil 2 kata terpenting
 }
 
+// Hitung kemiripan dua teks menggunakan Bigram (0 - 100)
+function calculateSimilarity(str1: string, str2: string) {
+  const s1 = sanitize(str1);
+  const s2 = sanitize(str2);
+  if (s1 === s2) return 100;
+  if (!s1 || !s2) return 0;
+  
+  function getBigrams(str: string) {
+    const bigrams = [];
+    for (let i = 0; i < str.length - 1; i++) {
+      bigrams.push(str.substring(i, i + 2));
+    }
+    return bigrams;
+  }
+  
+  const b1 = getBigrams(s1);
+  const b2 = getBigrams(s2);
+  let intersection = 0;
+  for (let i = 0; i < b1.length; i++) {
+    const index = b2.indexOf(b1[i]);
+    if (index !== -1) {
+      intersection++;
+      b2.splice(index, 1);
+    }
+  }
+  
+  const maxLen = Math.max(b1.length, getBigrams(s2).length);
+  if (maxLen === 0) return 0;
+  return Math.round((intersection / maxLen) * 100);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { products, triggered_by } = (await req.json()) as AutomapRequest;
@@ -41,11 +72,14 @@ export async function POST(req: NextRequest) {
         let foundWoo = null;
         let foundVariation = null;
         let isNeedsReview = false;
+        let matchMethod = "";
+        let confidenceScore = 100;
 
         if (bySku && bySku.length > 0) {
           // Ketemu berdasarkan SKU
           const wooProd = bySku[0];
           foundWoo = wooProd;
+          matchMethod = "exact_sku";
 
           if (wooProd.type === "variable") {
             // Cari variasi mana yang SKU-nya cocok
@@ -68,19 +102,38 @@ export async function POST(req: NextRequest) {
             
             if (exactMatch) {
               foundWoo = exactMatch;
+              matchMethod = "exact_name";
+              confidenceScore = 100;
             } else {
-              // === IF 3: PENCARIAN FUZZY (KATA KUNCI UNIK) ===
+              // === IF 3: PENCARIAN FUZZY & SIMILARITY CHECK ===
               const keys = getUniqueKeywords(nama);
+              let candidate = null;
+
               if (keys.length > 3) {
                 const byFuzzy = (await wooFetch("products", "GET", undefined, { search: keys, per_page: 5 })) as any[];
                 if (byFuzzy && byFuzzy.length > 0) {
-                  foundWoo = byFuzzy[0];
-                  isNeedsReview = true; // Ragu-ragu, masukkan ke Needs Review
+                  candidate = byFuzzy[0];
+                  matchMethod = "fuzzy_keyword";
                 }
-              } else {
-                // Kalau keyword terlalu pendek, ambil aja hasil pencarian nama teratas tapi Needs Review
-                foundWoo = byName[0];
-                isNeedsReview = true;
+              } 
+              
+              if (!candidate) {
+                // Kalau keyword terlalu pendek atau gak ketemu, ambil aja hasil pencarian nama teratas
+                candidate = byName[0];
+                matchMethod = "fuzzy_name";
+              }
+
+              // Lakukan pengecekan kemiripan sebelum diterima
+              if (candidate) {
+                const sim = calculateSimilarity(nama, candidate.name);
+                if (sim >= 40) {
+                  foundWoo = candidate;
+                  isNeedsReview = true;
+                  confidenceScore = sim;
+                } else {
+                  // Tolak jika kemiripan di bawah 40%
+                  foundWoo = null;
+                }
               }
             }
           }
@@ -105,7 +158,9 @@ export async function POST(req: NextRequest) {
             woo_sku_full: finalSku,
             needs_review: isNeedsReview,
             is_active: true,
-            triggered_by: triggered_by
+            triggered_by: triggered_by,
+            confidence_score: confidenceScore,
+            match_method: matchMethod
           }, { onConflict: "kode_accurate" });
 
           if (!error) {

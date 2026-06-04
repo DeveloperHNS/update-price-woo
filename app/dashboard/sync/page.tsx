@@ -6,7 +6,7 @@ import { wooFetch } from "@/lib/api";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import {
   Search, RefreshCw, AlertCircle, CheckCircle2,
-  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap
+  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2
 } from "lucide-react";
 
 type Tab = "unmatched" | "needs_review" | "matched";
@@ -261,6 +261,25 @@ export default function SyncPage() {
     }
   };
 
+  const handleResetReview = async () => {
+    if (!profile) return;
+    if (!confirm("Yakin ingin mereset semua produk yang berstatus 'Perlu Review'? Produk akan kembali ke status 'Belum Dimapping'.")) return;
+    showToast("Mereset Perlu Review...", "loading");
+    try {
+      const res = await fetch("/api/sync/reset-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ triggered_by: profile.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast("Berhasil mereset!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch (err: any) {
+      showToast("Gagal mereset: " + err.message, "error");
+    }
+  };
+
   const filtered = products.filter((p) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -284,6 +303,16 @@ export default function SyncPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {tab === "needs_review" && (
+            <button
+              onClick={handleResetReview}
+              disabled={loading || counts.needs_review === 0}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Reset Perlu Review</span>
+            </button>
+          )}
           {tab === "unmatched" && (
             <button
               onClick={handleAutoMap}
@@ -428,9 +457,9 @@ export default function SyncPage() {
 
                     {/* Mapping info for matched/needs_review */}
                     {p._mapping && (
-                      <div className="flex items-center gap-1.5 mt-1">
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         <ArrowRight className="w-3 h-3 text-slate-300 shrink-0" />
-                        <span className="text-xs text-slate-500 truncate">
+                        <span className="text-xs text-slate-500 truncate max-w-xs">
                           {p._mapping.woo_name ?? `WC #${p._mapping.woo_product_id}`}
                           {p._mapping.woo_sku_full && (
                             <span className="text-slate-400 ml-1">({p._mapping.woo_sku_full})</span>
@@ -439,6 +468,14 @@ export default function SyncPage() {
                         {p._status === "needs_review" && (
                           <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">
                             Perlu Konfirmasi
+                          </span>
+                        )}
+                        {/* Tampilkan Alasan */}
+                        {p._mapping.match_method && p._status === "needs_review" && (
+                          <span className="text-[10px] text-slate-400 italic">
+                            ({p._mapping.match_method.includes("fuzzy")
+                               ? `Kemiripan: ${p._mapping.confidence_score ?? 0}%` 
+                               : "Auto Match"})
                           </span>
                         )}
                       </div>
