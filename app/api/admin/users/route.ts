@@ -93,7 +93,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : JSON.stringify(err) }, { status: 500 });
   }
 }
