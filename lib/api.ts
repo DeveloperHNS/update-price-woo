@@ -8,6 +8,7 @@ export interface WooProduct {
   stock_status?: 'instock' | 'outofstock' | string;
   status?: 'publish' | 'private' | 'draft' | string;
   parent?: number;
+  attributes?: Array<{ id: number; name: string; position?: number; visible?: boolean; variation?: boolean; options: string[] }>;
 }
 
 export interface WooVariation {

@@ -113,6 +113,20 @@ export default function UploadProductPage() {
     }
   };
 
+  const handleCreateCategory = async (catName: string) => {
+    if (!catName.trim()) return;
+    showToast(`Membuat kategori "${catName}"...`, "loading");
+    try {
+      const res = await wooFetch("products/categories", "POST", { name: catName });
+      setCategories(prev => [...prev, res].sort((a: any, b: any) => a.parent - b.parent || a.name.localeCompare(b.name)));
+      setSelCatIds(prev => [...prev, res.id]);
+      setCatSearch("");
+      showToast(`Kategori ${catName} berhasil dibuat`, "success");
+    } catch (err: any) {
+      showToast(`Gagal membuat kategori: ${err.message}`, "error");
+    }
+  };
+
   const moveImage = (idx: number, dir: 'up' | 'down') => {
     setImages(prev => {
       const arr = [...prev];
@@ -358,9 +372,9 @@ export default function UploadProductPage() {
                             </button>
                           )}
                         </div>
-                        <div className="overflow-y-auto p-1.5 flex-1">
+                        <div className="overflow-y-auto p-1.5 flex-1 max-h-60">
                           {catTree.length === 0 ? (
-                            <p className="text-xs text-slate-400 text-center py-4">Tidak ada hasil</p>
+                            <p className="text-xs text-slate-400 text-center py-4">Kategori tidak ditemukan</p>
                           ) : catTree.map(c => (
                             <button
                               key={c.id}
@@ -373,6 +387,18 @@ export default function UploadProductPage() {
                               <span className="truncate">{c.name}</span>
                             </button>
                           ))}
+                          
+                          {/* Create New Category Button */}
+                          {catSearch.trim() && !categories.some(c => c.name.toLowerCase() === catSearch.toLowerCase().trim()) && (
+                            <button
+                              type="button"
+                              onClick={() => handleCreateCategory(catSearch.trim())}
+                              className="w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg font-medium transition-colors border border-blue-100"
+                            >
+                              <Plus className="w-4 h-4" />
+                              Tambah "{catSearch.trim()}"
+                            </button>
+                          )}
                         </div>
                       </div>
                     </>

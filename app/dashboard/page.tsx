@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
 import { logActivity } from "@/lib/activity-log";
-import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2 } from "lucide-react";
+import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2, ListTree } from "lucide-react";
+import VarEditModal from "./components/VarEditModal";
+import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 
 type WooCategory = {
   id: number;
@@ -28,6 +30,11 @@ export default function ManageProducts() {
   const [categories, setCategories] = useState<WooCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    getCurrentProfile().then(setProfile);
+  }, []);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -50,6 +57,7 @@ export default function ManageProducts() {
   const [updatingStatus, setUpdatingStatus] = useState<Set<number>>(new Set());
   const [deleting, setDeleting] = useState<Set<number>>(new Set());
   const [productToDelete, setProductToDelete] = useState<WooProduct | null>(null);
+  const [varEditModalProduct, setVarEditModalProduct] = useState<WooProduct | null>(null);
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
@@ -571,6 +579,8 @@ export default function ManageProducts() {
           onUpdate: sharedOnUpdate,
           showToast,
           mappedPrices,
+          isAdmin: profile?.role === "admin",
+          onOpenVarModal: () => setVarEditModalProduct(p),
         });
 
         return (
@@ -743,6 +753,27 @@ export default function ManageProducts() {
         </div>
       )}
 
+      {/* Variation Edit Modal */}
+      {varEditModalProduct && (
+        <VarEditModal 
+          product={varEditModalProduct} 
+          onClose={() => setVarEditModalProduct(null)} 
+          onSaved={() => {
+            // refresh product data or variations if needed
+            toggleExpand(varEditModalProduct.id);
+            if (expanded.has(varEditModalProduct.id)) {
+              // collapse and expand to reload
+              setExpanded(prev => {
+                const next = new Set(prev);
+                next.delete(varEditModalProduct.id);
+                return next;
+              });
+              setTimeout(() => toggleExpand(varEditModalProduct.id), 100);
+            }
+          }} 
+        />
+      )}
+
       {/* Toast */}
       {toast && (
         <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 max-w-xs ${
@@ -767,7 +798,7 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices }: {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices, isAdmin, onOpenVarModal }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -784,6 +815,8 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success"|"error"|"loading") => void;
   mappedPrices: Record<number, { cp: string | null; price: string | null; sp: string | null }>;
+  isAdmin: boolean;
+  onOpenVarModal: () => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -892,18 +925,31 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
               {isPublished ? "Publish" : "Private"}
             </button>
             {/* Delete button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              disabled={isDeleting}
-              title="Hapus Produk"
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit disabled:opacity-40 disabled:cursor-not-allowed bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
-            >
-              {isDeleting
-                ? <RefreshCw className="w-3 h-3 animate-spin" />
-                : <Trash2 className="w-3 h-3" />
-              }
-              Hapus
-            </button>
+            {isAdmin && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                disabled={isDeleting}
+                title="Hapus Produk"
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit disabled:opacity-40 disabled:cursor-not-allowed bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
+              >
+                {isDeleting
+                  ? <RefreshCw className="w-3 h-3 animate-spin" />
+                  : <Trash2 className="w-3 h-3" />
+                }
+                Hapus
+              </button>
+            )}
+            {/* Edit Variasi button */}
+            {isVar && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenVarModal(); }}
+                title="Edit Variasi"
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100`}
+              >
+                <ListTree className="w-3 h-3" />
+                Edit Variasi
+              </button>
+            )}
           </div>
         </td>
       </tr>
@@ -995,7 +1041,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
 }
 
 // ── ProductCard — mobile card view ──────────────────────────────────────────
-function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast }: {
+function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, isAdmin, onOpenVarModal }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -1011,6 +1057,8 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
   onToggleVariationStock: (v: WooVariation) => void;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success" | "error" | "loading") => void;
+  isAdmin: boolean;
+  onOpenVarModal: () => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -1111,20 +1159,35 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
             <span className="text-[9px] text-slate-400 font-medium">{isPublished ? "Publish" : "Private"}</span>
           </div>
           {/* Delete toggle */}
-          <div className="flex flex-col items-center gap-0.5">
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              disabled={isDeleting}
-              title="Hapus Produk"
-              className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors disabled:opacity-40 bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
-            >
-              {isDeleting
-                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                : <Trash2 className="w-3.5 h-3.5" />
-              }
-            </button>
-            <span className="text-[9px] text-slate-400 font-medium">Hapus</span>
-          </div>
+          {isAdmin && (
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                disabled={isDeleting}
+                title="Hapus Produk"
+                className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors disabled:opacity-40 bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
+              >
+                {isDeleting
+                  ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  : <Trash2 className="w-3.5 h-3.5" />
+                }
+              </button>
+              <span className="text-[9px] text-slate-400 font-medium">Hapus</span>
+            </div>
+          )}
+          {/* Edit Variasi toggle */}
+          {isVar && (
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenVarModal(); }}
+                title="Edit Variasi"
+                className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100`}
+              >
+                <ListTree className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[9px] text-slate-400 font-medium">Variasi</span>
+            </div>
+          )}
         </div>
       </div>
 

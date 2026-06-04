@@ -452,7 +452,7 @@ export default function UpdatePricesPage() {
             </div>
 
             {/* ── Mobile cards (<sm) ── */}
-            <div className="sm:hidden p-3 space-y-2.5 pb-2">
+            <div className="sm:hidden p-3 space-y-2.5 pb-32">
               {paginatedProducts.map((p) => {
                 const kode = p["Kode Accurate"] ?? "";
                 const isEdited = edits[kode] !== undefined;
