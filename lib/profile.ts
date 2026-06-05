@@ -58,7 +58,7 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
       .single();
 
     const email = user.email ?? "";
-    const superAdmins = (process.env.SUPER_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase());
+    const superAdmins = (process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase());
     const is_super_admin = superAdmins.includes(email.toLowerCase());
 
     return {
