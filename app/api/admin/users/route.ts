@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getCurrentProfile } from "@/lib/profile";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+
+async function isSuperAdminServer() {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+      },
+    }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return false;
+  const superAdmins = (process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase());
+  return superAdmins.includes(user.email.toLowerCase());
+}
 
 // Server-side admin client using service role key
 function adminClient() {
@@ -12,8 +32,8 @@ function adminClient() {
 // GET — list all users with profile data
 export async function GET() {
   try {
-    const profile = await getCurrentProfile();
-    if (!profile?.is_super_admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const isSuperAdmin = await isSuperAdminServer();
+    if (!isSuperAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const supabase = adminClient();
 
@@ -55,8 +75,8 @@ export async function DELETE(req: NextRequest) {
     const { userId } = await req.json() as { userId: string };
     if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });
 
-    const profile = await getCurrentProfile();
-    if (!profile?.is_super_admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const isSuperAdmin = await isSuperAdminServer();
+    if (!isSuperAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const supabase = adminClient();
 
@@ -85,8 +105,8 @@ export async function PATCH(req: NextRequest) {
 
     if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });
 
-    const profile = await getCurrentProfile();
-    if (!profile?.is_super_admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const isSuperAdmin = await isSuperAdminServer();
+    if (!isSuperAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const supabase = adminClient();
     const patch: Record<string, string | null> = {};
