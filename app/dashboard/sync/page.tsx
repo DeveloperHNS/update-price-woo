@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getCurrentProfile, type UserProfile } from "@/lib/profile";
+import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 import { wooFetch } from "@/lib/api";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import {
@@ -300,7 +300,7 @@ export default function SyncPage() {
         <div>
           <h2 className="text-base font-bold text-slate-800">Sync Product</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            {isAdmin ? "Semua kategori" : `Kategori: ${profile?.pic_category ?? "—"}`}
+            {isAdmin ? "Semua kategori" : `Kategori: ${parseCategoryAccess(profile?.pic_category ?? null).erp ?? "—"}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
