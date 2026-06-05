@@ -215,7 +215,8 @@ export default function AdminUsersPage() {
 
                             <div className="flex-1 min-w-0">
                               {/* Roles & Categories Display */}
-                              <div className="flex items-center gap-2 flex-wrap">
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-semibold text-slate-800 text-sm truncate">
                                   {u.full_name || "—"}
                                 </span>
@@ -235,36 +236,51 @@ export default function AdminUsersPage() {
                                   return (
                                     <>
                                       {/* WOO ACCESS */}
-                                      <div className="flex items-center gap-1">
+                                      <div className="flex items-center gap-1 flex-wrap">
                                         <span className="text-[10px] text-slate-400 font-medium">Woo:</span>
                                         {access.woo === "ALL" ? (
                                           <span className="text-[10px] px-1.5 py-px rounded font-medium bg-emerald-100 text-emerald-700">Semua Kategori</span>
-                                        ) : access.woo ? access.woo.split(",").map(catId => {
-                                          const cName = wooCategories.find(c => c.id.toString() === catId)?.name || catId;
-                                          return (
-                                            <span key={`woo-${catId}`} className={`text-[10px] px-1.5 py-px rounded font-medium ${colorClass}`}>
-                                              {cName}
-                                            </span>
-                                          );
-                                        }) : <span className="text-[10px] text-slate-400 italic">Tidak ada</span>}
+                                        ) : access.woo ? (() => {
+                                            const arr = access.woo.split(",");
+                                            const show = arr.slice(0, 3);
+                                            const extra = arr.length - 3;
+                                            return (
+                                              <>
+                                                {show.map(catId => {
+                                                  const cName = wooCategories.find(c => c.id.toString() === catId)?.name || catId;
+                                                  return <span key={`woo-${catId}`} className={`text-[10px] px-1.5 py-px rounded font-medium ${colorClass} truncate max-w-[120px]`}>{cName}</span>;
+                                                })}
+                                                {extra > 0 && <span className={`text-[10px] px-1.5 py-px rounded font-medium ${colorClass}`}>+{extra}</span>}
+                                              </>
+                                            )
+                                        })() : <span className="text-[10px] text-slate-400 italic">Tidak ada</span>}
                                       </div>
                                       
                                       {/* ERP ACCESS */}
-                                      <div className="flex items-center gap-1 ml-2">
+                                      <div className="flex items-center gap-1 flex-wrap ml-0 sm:ml-2">
                                         <span className="text-[10px] text-slate-400 font-medium">ERP:</span>
                                         {access.erp === "ALL" ? (
                                           <span className="text-[10px] px-1.5 py-px rounded font-medium bg-emerald-100 text-emerald-700">Semua Kategori</span>
-                                        ) : access.erp ? access.erp.split(",").map(cat => (
-                                            <span key={`erp-${cat}`} className={`text-[10px] px-1.5 py-px rounded font-medium ${colorClass}`}>
-                                              {cat}
-                                            </span>
-                                        )) : <span className="text-[10px] text-slate-400 italic">Tidak ada</span>}
+                                        ) : access.erp ? (() => {
+                                            const arr = access.erp.split(",");
+                                            const show = arr.slice(0, 3);
+                                            const extra = arr.length - 3;
+                                            return (
+                                              <>
+                                                {show.map(cat => (
+                                                  <span key={`erp-${cat}`} className={`text-[10px] px-1.5 py-px rounded font-medium ${colorClass} truncate max-w-[120px]`}>{cat}</span>
+                                                ))}
+                                                {extra > 0 && <span className={`text-[10px] px-1.5 py-px rounded font-medium ${colorClass}`}>+{extra}</span>}
+                                              </>
+                                            )
+                                        })() : <span className="text-[10px] text-slate-400 italic">Tidak ada</span>}
                                       </div>
                                     </>
                                   );
                                 })()}
                               </div>
-                              <p className="text-xs text-slate-400 truncate mt-0.5">{u.email}</p>
+                                </div>
+                                <p className="text-xs text-slate-400 truncate mt-1">{u.email}</p>
 
                               {/* PIC category selector */}
                               {(isPic || u.role === "product_staff") && u.status === "active" && (() => {
@@ -286,54 +302,90 @@ export default function AdminUsersPage() {
                                   {!isAll && (
                                     <>
                                       {/* WooCommerce Access */}
-                                      <div className="space-y-1.5">
+                                      <div className="space-y-1.5 mt-3">
                                         <span className="text-[11px] text-slate-500 font-medium block">Akses Website (WooCommerce):</span>
-                                        <div className="flex flex-wrap items-center gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-white border border-slate-200 rounded-lg">
-                                          {wooCategories.map(c => {
-                                            const isSelected = access.woo?.split(",").includes(c.id.toString());
-                                            return (
-                                              <button
-                                                key={`woo-${c.id}`}
-                                                disabled={busy}
-                                                onClick={() => {
-                                                  const currentArr = access.woo && access.woo !== "ALL" ? access.woo.split(",") : [];
-                                                  const newArr = isSelected ? currentArr.filter(x => x !== c.id.toString()) : [...currentArr, c.id.toString()];
-                                                  const newAccess = { ...access, woo: newArr.length ? newArr.join(",") : null };
-                                                  updateUser(u.id, { pic_category: JSON.stringify(newAccess) });
-                                                }}
-                                                className={`text-[10px] px-2 py-1 rounded-md font-medium border transition-colors disabled:opacity-50 ${isSelected ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"}`}
-                                              >
-                                                {c.name}
-                                              </button>
-                                            );
-                                          })}
+                                        <div className="max-h-60 overflow-y-auto p-3 bg-white border border-slate-200 rounded-lg space-y-4">
                                           {wooCategories.length === 0 && <span className="text-[10px] text-slate-400">Memuat kategori WooCommerce...</span>}
+                                          {(() => {
+                                            const parents = wooCategories.filter(c => c.parent === 0).sort((a,b) => a.name.localeCompare(b.name));
+                                            const orphans = wooCategories.filter(c => c.parent !== 0 && !parents.find(p => p.id === c.parent));
+                                            
+                                            const renderCat = (c: any, isChild = false) => {
+                                              const isSelected = access.woo?.split(",").includes(c.id.toString());
+                                              return (
+                                                <label key={`woo-${c.id}`} className="flex items-start gap-2 p-1 hover:bg-slate-50 rounded cursor-pointer group">
+                                                  <input type="checkbox" disabled={busy} className="mt-0.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50 shrink-0"
+                                                    checked={isSelected || false}
+                                                    onChange={(e) => {
+                                                      const currentArr = access.woo && access.woo !== "ALL" ? access.woo.split(",") : [];
+                                                      const newArr = e.target.checked ? [...currentArr, c.id.toString()] : currentArr.filter(x => x !== c.id.toString());
+                                                      updateUser(u.id, { pic_category: JSON.stringify({ ...access, woo: newArr.length ? newArr.join(",") : null }) });
+                                                    }}
+                                                  />
+                                                  <span className={`${isChild ? "text-[11px] text-slate-600" : "text-xs font-semibold text-slate-700"} group-hover:text-blue-700 transition-colors`}>
+                                                    {c.name}
+                                                  </span>
+                                                </label>
+                                              );
+                                            };
+
+                                            return (
+                                              <>
+                                                {parents.map(p => {
+                                                  const children = wooCategories.filter(c => c.parent === p.id).sort((a,b) => a.name.localeCompare(b.name));
+                                                  return (
+                                                    <div key={`group-${p.id}`} className="space-y-1">
+                                                      {renderCat(p, false)}
+                                                      {children.length > 0 && (
+                                                        <div className="pl-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-2 gap-y-0.5 border-l-2 border-slate-100 ml-2 mt-1">
+                                                          {children.map(c => renderCat(c, true))}
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  );
+                                                })}
+                                                {orphans.length > 0 && (
+                                                  <div className="space-y-1 pt-2 border-t border-slate-100 mt-2">
+                                                    <span className="text-[11px] font-semibold text-slate-500 px-1">Kategori Lainnya</span>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-2 gap-y-0.5">
+                                                      {orphans.map(c => renderCat(c, true))}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </>
+                                            );
+                                          })()}
                                         </div>
                                       </div>
 
                                       {/* ERP Access */}
-                                      <div className="space-y-1.5">
+                                      <div className="space-y-1.5 mt-3">
                                         <span className="text-[11px] text-slate-500 font-medium block">Akses ERP / Accurate:</span>
-                                        <div className="flex flex-wrap items-center gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-white border border-slate-200 rounded-lg">
-                                          {erpCategories.map(cat => {
-                                            const isSelected = access.erp?.split(",").includes(cat);
-                                            return (
-                                              <button
-                                                key={`erp-${cat}`}
-                                                disabled={busy}
-                                                onClick={() => {
-                                                  const currentArr = access.erp && access.erp !== "ALL" ? access.erp.split(",") : [];
-                                                  const newArr = isSelected ? currentArr.filter(x => x !== cat) : [...currentArr, cat];
-                                                  const newAccess = { ...access, erp: newArr.length ? newArr.join(",") : null };
-                                                  updateUser(u.id, { pic_category: JSON.stringify(newAccess) });
-                                                }}
-                                                className={`text-[10px] px-2 py-1 rounded-md font-medium border transition-colors disabled:opacity-50 ${isSelected ? "bg-blue-100 text-blue-700 border-blue-200" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"}`}
-                                              >
-                                                {cat}
-                                              </button>
-                                            );
-                                          })}
-                                          {erpCategories.length === 0 && <span className="text-[10px] text-slate-400">Memuat kategori ERP...</span>}
+                                        <div className="max-h-48 overflow-y-auto p-3 bg-white border border-slate-200 rounded-lg">
+                                          {erpCategories.length === 0 ? (
+                                            <span className="text-[10px] text-slate-400">Memuat kategori ERP...</span>
+                                          ) : (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-2 gap-y-1">
+                                              {erpCategories.map(cat => {
+                                                const isSelected = access.erp?.split(",").includes(cat);
+                                                return (
+                                                  <label key={`erp-${cat}`} className="flex items-start gap-2 p-1 hover:bg-slate-50 rounded cursor-pointer group">
+                                                    <input type="checkbox" disabled={busy} className="mt-0.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50 shrink-0"
+                                                      checked={isSelected || false}
+                                                      onChange={(e) => {
+                                                        const currentArr = access.erp && access.erp !== "ALL" ? access.erp.split(",") : [];
+                                                        const newArr = e.target.checked ? [...currentArr, cat] : currentArr.filter(x => x !== cat);
+                                                        updateUser(u.id, { pic_category: JSON.stringify({ ...access, erp: newArr.length ? newArr.join(",") : null }) });
+                                                      }}
+                                                    />
+                                                    <span className="text-[11px] text-slate-600 group-hover:text-blue-700 transition-colors truncate" title={cat}>
+                                                      {cat}
+                                                    </span>
+                                                  </label>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                     </>
