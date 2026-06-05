@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getCurrentProfile } from "@/lib/profile";
 
 // Server-side admin client using service role key
 function adminClient() {
@@ -11,6 +12,9 @@ function adminClient() {
 // GET — list all users with profile data
 export async function GET() {
   try {
+    const profile = await getCurrentProfile();
+    if (!profile?.is_super_admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const supabase = adminClient();
 
     // Fetch all auth users
@@ -51,6 +55,9 @@ export async function DELETE(req: NextRequest) {
     const { userId } = await req.json() as { userId: string };
     if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });
 
+    const profile = await getCurrentProfile();
+    if (!profile?.is_super_admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const supabase = adminClient();
 
     // Hapus profile dulu (jika tidak ada cascade)
@@ -77,6 +84,9 @@ export async function PATCH(req: NextRequest) {
     };
 
     if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });
+
+    const profile = await getCurrentProfile();
+    if (!profile?.is_super_admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const supabase = adminClient();
     const patch: Record<string, string | null> = {};
