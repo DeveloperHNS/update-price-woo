@@ -284,25 +284,28 @@ export default function UploadProductPage() {
     }
   };
 
-  const catTree = (() => {
+  const groupedCategories = (() => {
     const access = parseCategoryAccess(profile?.pic_category ?? null);
     const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
     let allowedCats = categories;
 
     if (isRestricted) {
-      if (!access.woo) return [];
+      if (!access.woo) return { parents: [], allowedCats: [], orphans: [] };
       const allowedIds = access.woo.split(",").map(id => parseInt(id, 10));
       allowedCats = categories.filter(c => allowedIds.includes(c.id));
     }
 
-    const buildTree = (parentId = 0, depth = 0): any[] =>
-      allowedCats.filter(c => c.parent === parentId).flatMap(c => [{ ...c, depth }, ...buildTree(c.id, depth + 1)]);
-    
-    // If restricted, we just show a flat list if the parent isn't in their allowed list
-    const tree = isRestricted ? allowedCats.map(c => ({...c, depth: 0})) : buildTree();
-    
-    if (!catSearch.trim()) return tree;
-    return tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
+    if (catSearch.trim()) {
+      allowedCats = allowedCats.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
+    }
+
+    const parentIds = new Set(allowedCats.map(c => c.parent));
+    allowedCats.filter(c => c.parent === 0).forEach(c => parentIds.add(c.id));
+
+    const parents = categories.filter(c => c.parent === 0 && parentIds.has(c.id)).sort((a,b) => a.name.localeCompare(b.name));
+    const orphans = allowedCats.filter(c => c.parent !== 0 && !parents.find(p => p.id === c.parent));
+
+    return { parents, allowedCats, orphans };
   })();
 
   if (initialLoading) {
@@ -409,31 +412,67 @@ export default function UploadProductPage() {
                           )}
                         </div>
                         <div className="overflow-y-auto p-1.5 flex-1 max-h-60">
-                          {catTree.length === 0 ? (
-                            <p className="text-xs text-slate-400 text-center py-4">Kategori tidak ditemukan</p>
-                          ) : catTree.map(c => (
-                            <div key={c.id} className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setSelCatIds(prev => prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id])}
-                                className={`flex-1 text-left px-3 py-2 text-sm rounded-lg flex items-center gap-2 transition-colors ${selCatIds.includes(c.id) ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
-                              >
-                                <span className="text-slate-300 text-xs">{'—'.repeat(c.depth)}</span>
-                                <input type="checkbox" checked={selCatIds.includes(c.id)} readOnly className="rounded text-blue-600 focus:ring-blue-500 shrink-0" />
-                                <span className="truncate">{c.name}</span>
-                              </button>
-                              {profile?.role === 'admin' && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); handleDeleteCategory(c.id, c.name); }}
-                                  className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                                  title="Hapus Kategori"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                            {groupedCategories.allowedCats.length === 0 ? (
+                              <p className="text-xs text-slate-400 text-center py-4">Kategori tidak ditemukan</p>
+                            ) : (() => {
+                                const renderItem = (c: any, isChild = false) => {
+                                  const isAllowed = groupedCategories.allowedCats.some(allowed => allowed.id === c.id);
+                                  if (!isAllowed && !isChild) {
+                                    return (
+                                      <div key={c.id} className="flex items-center gap-1.5 px-3 py-1">
+                                        <span className="text-xs font-semibold text-slate-400">{c.name}</span>
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div key={c.id} className="flex items-center gap-1 group">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelCatIds(prev => prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id])}
+                                        className={`flex-1 text-left px-3 py-1.5 text-sm rounded-lg flex items-center gap-2 transition-colors ${selCatIds.includes(c.id) ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
+                                      >
+                                        <input type="checkbox" checked={selCatIds.includes(c.id)} readOnly className="rounded text-blue-600 focus:ring-blue-500 shrink-0" />
+                                        <span className={`truncate ${isChild ? "text-xs text-slate-600" : "text-sm font-semibold"}`}>{c.name}</span>
+                                      </button>
+                                      {profile?.role === 'admin' && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); handleDeleteCategory(c.id, c.name); }}
+                                          className="p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all shrink-0"
+                                          title="Hapus Kategori"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                };
+
+                                return (
+                                  <div className="space-y-2">
+                                    {groupedCategories.parents.map(p => {
+                                      const children = groupedCategories.allowedCats.filter(c => c.parent === p.id).sort((a,b) => a.name.localeCompare(b.name));
+                                      return (
+                                        <div key={`group-${p.id}`} className="space-y-0.5">
+                                          {renderItem(p, false)}
+                                          {children.length > 0 && (
+                                            <div className="pl-6 border-l-2 border-slate-100 ml-3 space-y-0.5">
+                                              {children.map(c => renderItem(c, true))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+
+                                    {groupedCategories.orphans.length > 0 && (
+                                      <div className="space-y-0.5 pt-2 border-t border-slate-100 mt-2">
+                                        <span className="text-[11px] font-semibold text-slate-500 px-3 block mb-1">Kategori Lainnya</span>
+                                        {groupedCategories.orphans.map(c => renderItem(c, true))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                            })()}
                           
                           {/* Create New Category Button */}
                           {catSearch.trim() && !categories.some(c => c.name.toLowerCase() === catSearch.toLowerCase().trim()) && (
