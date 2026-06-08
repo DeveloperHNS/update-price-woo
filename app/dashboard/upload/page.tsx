@@ -205,7 +205,7 @@ export default function UploadProductPage() {
     const parsedAttrs = varAttrs.map(a => ({
       id: a.id,
       name: a.name,
-      options: a.options.split(/[|,]/).map(s => s.trim()).filter(Boolean)
+      options: a.options.split(/[\r\n|,]+/).map(s => s.trim()).filter(Boolean)
     }));
     const cartesian = (arrays: any[][]): any[][] =>
       arrays.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())), [[]]);
@@ -249,7 +249,7 @@ export default function UploadProductPage() {
       if (selectedAttributes.length > 0) {
         payload.attributes = selectedAttributes.map(a => ({
           id: a.id, name: a.name, visible: true, variation: a.variation,
-          options: a.options.split(/[|,]/).map(s => s.trim()).filter(Boolean)
+          options: a.options.split(/[\r\n|,]+/).map(s => s.trim()).filter(Boolean)
         }));
       }
       if (images.length > 0) payload.images = images.map(img => ({ id: img.id, alt: img.alt }));
@@ -763,7 +763,7 @@ export default function UploadProductPage() {
                               value={attr.options}
                               onChange={e => updateAttribute(idx, 'options', e.target.value)}
                               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-blue-500 outline-none resize-none"
-                              placeholder="Contoh: Merah | Biru | Hijau  atau  S, M, L, XL"
+                              placeholder="Contoh: Merah | Biru | Hijau, atau pisah dengan Enter"
                               rows={2}
                             />
                           </div>
@@ -797,7 +797,7 @@ export default function UploadProductPage() {
                             </div>
                             <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-2.5 border border-slate-200 rounded-lg bg-white">
                               {termsCache[attr.id].map(term => {
-                                const isChecked = attr.options.split(/[|,]/).map(s => s.trim()).includes(term.name);
+                                const isChecked = attr.options.split(/[\r\n|,]+/).map(s => s.trim()).includes(term.name);
                                 return (
                                   <label key={term.id} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors ${isChecked ? "bg-blue-50 border-blue-300 text-blue-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"}`}>
                                     <input
@@ -805,7 +805,7 @@ export default function UploadProductPage() {
                                       className="rounded text-blue-600 w-3 h-3"
                                       checked={isChecked}
                                       onChange={(e) => {
-                                        let current = attr.options.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+                                        let current = attr.options.split(/[\r\n|,]+/).map(s => s.trim()).filter(Boolean);
                                         if (e.target.checked) { if (!current.includes(term.name)) current.push(term.name); }
                                         else { current = current.filter(c => c !== term.name); }
                                         updateAttribute(idx, 'options', current.join(' | '));
