@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 import { wooFetch } from "@/lib/api";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import {
   Search, RefreshCw, AlertCircle, CheckCircle2,
-  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2
+  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2, FileUp
 } from "lucide-react";
 
 type Tab = "unmatched" | "needs_review" | "matched";
@@ -56,6 +56,10 @@ export default function SyncPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
+
+  // CSV Automap state
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvUploading, setCsvUploading] = useState(false);
 
   // Matching modal
   const [matchTarget, setMatchTarget] = useState<ProductWithStatus | null>(null);
@@ -261,6 +265,39 @@ export default function SyncPage() {
     }
   };
 
+  const handleUploadCsv = () => {
+    csvInputRef.current?.click();
+  };
+
+  const handleCsvFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+    
+    setCsvUploading(true);
+    showToast("Mengunggah dan memproses CSV...", "loading");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("triggered_by", profile.id);
+
+    try {
+      const res = await fetch("/api/sync/automap-csv", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal memproses CSV");
+      
+      showToast(`Berhasil auto-map ${data.matched_count} produk dari CSV!`, "success");
+      loadProducts(tab, profile.pic_category);
+    } catch (err: any) {
+      showToast("Error CSV: " + err.message, "error");
+    } finally {
+      setCsvUploading(false);
+      if (csvInputRef.current) csvInputRef.current.value = "";
+    }
+  };
+
   const handleResetReview = async () => {
     if (!profile) return;
     if (!confirm("Yakin ingin mereset semua produk yang berstatus 'Perlu Review'? Produk akan kembali ke status 'Belum Dimapping'.")) return;
@@ -315,14 +352,25 @@ export default function SyncPage() {
             </button>
           )}
           {tab === "unmatched" && (
-            <button
-              onClick={handleAutoMap}
-              disabled={loading || autoMapping}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Zap className={`w-4 h-4 ${autoMapping ? "animate-pulse text-amber-300" : ""}`} />
-              <span className="hidden sm:inline">{autoMapping ? "Memproses..." : "Auto Map Cerdas"}</span>
-            </button>
+            <>
+              <input type="file" accept=".csv" className="hidden" ref={csvInputRef} onChange={handleCsvFileChange} />
+              <button
+                onClick={handleUploadCsv}
+                disabled={loading || autoMapping || csvUploading}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <FileUp className={`w-4 h-4 ${csvUploading ? "animate-pulse" : ""}`} />
+                <span className="hidden lg:inline">{csvUploading ? "Memproses CSV..." : "Upload CSV Woo"}</span>
+              </button>
+              <button
+                onClick={handleAutoMap}
+                disabled={loading || autoMapping || csvUploading}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Zap className={`w-4 h-4 ${autoMapping ? "animate-pulse text-amber-300" : ""}`} />
+                <span className="hidden sm:inline">{autoMapping ? "Memproses..." : "Auto Map Cerdas"}</span>
+              </button>
+            </>
           )}
           <button
             onClick={() => loadProducts(tab, profile?.pic_category ?? null)}
