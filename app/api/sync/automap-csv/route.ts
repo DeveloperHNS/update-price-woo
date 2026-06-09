@@ -1,20 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase-server";
-import Papa from "papaparse";
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
-    const triggered_by = formData.get("triggered_by") as string;
+    const body = await req.json();
+    const { wooProducts, triggered_by } = body;
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!wooProducts || !Array.isArray(wooProducts)) {
+      return NextResponse.json({ error: "No products provided" }, { status: 400 });
     }
-
-    const csvText = await file.text();
-    const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
-    const wooProducts = parsed.data as any[];
 
     const supabase = createServiceClient();
 
@@ -56,13 +50,12 @@ export async function POST(req: NextRequest) {
     };
 
     for (const woo of wooProducts) {
-      // CSV column headers depend on the language of WooCommerce export. 
-      // User's CSV uses Indonesian: ID, Tipe, SKU, Nama, Induk
-      const wooIdStr = woo.ID || woo.id;
-      const wooTipe = woo.Tipe || woo.Type || woo.type;
-      const wooSku = woo.SKU || woo.sku;
-      const wooNama = woo.Nama || woo.Name || woo.name;
-      const wooInduk = woo.Induk || woo.Parent || woo.parent;
+      // Frontend parses the CSV and sends keys as: id, type, sku, name, parent
+      const wooIdStr = woo.id;
+      const wooTipe = woo.type;
+      const wooSku = woo.sku;
+      const wooNama = woo.name;
+      const wooInduk = woo.parent;
 
       if (!wooIdStr || !wooNama) continue;
 

@@ -1,5 +1,7 @@
 "use client";
 
+import Papa from "papaparse";
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 import { wooFetch } from "@/lib/api";
@@ -274,28 +276,51 @@ export default function SyncPage() {
     if (!file || !profile) return;
     
     setCsvUploading(true);
-    showToast("Mengunggah dan memproses CSV...", "loading");
+    showToast("Mem-parsing CSV di browser...", "loading");
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("triggered_by", profile.id);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const data = results.data as any[];
+        const wooProducts = data.map((r: any) => ({
+           id: r.ID || r.id,
+           type: r.Tipe || r.Type || r.type,
+           sku: r.SKU || r.sku,
+           name: r.Nama || r.Name || r.name,
+           parent: r.Induk || r.Parent || r.parent
+        })).filter(r => r.id && r.name);
 
-    try {
-      const res = await fetch("/api/sync/automap-csv", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Gagal memproses CSV");
-      
-      showToast(`Berhasil auto-map ${data.matched_count} produk dari CSV!`, "success");
-      loadProducts(tab, profile.pic_category);
-    } catch (err: any) {
-      showToast("Error CSV: " + err.message, "error");
-    } finally {
-      setCsvUploading(false);
-      if (csvInputRef.current) csvInputRef.current.value = "";
-    }
+        showToast(`Ditemukan ${wooProducts.length} produk di CSV. Memulai sinkronisasi...`, "loading");
+        
+        try {
+           const BATCH_SIZE = 1000;
+           let totalMatched = 0;
+           for (let i = 0; i < wooProducts.length; i += BATCH_SIZE) {
+              const batch = wooProducts.slice(i, i + BATCH_SIZE);
+              const res = await fetch("/api/sync/automap-csv", {
+                 method: "POST",
+                 headers: { "Content-Type": "application/json" },
+                 body: JSON.stringify({ wooProducts: batch, triggered_by: profile.id })
+              });
+              const resData = await res.json();
+              if (!res.ok) throw new Error(resData.error || "Gagal memproses batch");
+              totalMatched += resData.matched_count || 0;
+           }
+           showToast(`Berhasil auto-map ${totalMatched} produk dari CSV!`, "success");
+           loadProducts(tab, profile.pic_category);
+        } catch(err: any) {
+           showToast("Error CSV: " + err.message, "error");
+        } finally {
+           setCsvUploading(false);
+           if (csvInputRef.current) csvInputRef.current.value = "";
+        }
+      },
+      error: (err) => {
+        showToast("Gagal membaca CSV: " + err.message, "error");
+        setCsvUploading(false);
+      }
+    });
   };
 
   const handleResetReview = async () => {
