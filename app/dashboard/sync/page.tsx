@@ -8,10 +8,10 @@ import { wooFetch } from "@/lib/api";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import {
   Search, RefreshCw, AlertCircle, CheckCircle2,
-  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2, FileUp
+  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2, FileUp, EyeOff, Undo2
 } from "lucide-react";
 
-type Tab = "unmatched" | "needs_review" | "matched";
+type Tab = "unmatched" | "needs_review" | "matched" | "ignored";
 
 type WooSearchResult = {
   id: number;
@@ -40,6 +40,7 @@ const TAB_LABELS: Record<Tab, string> = {
   unmatched: "Belum Dimapping",
   needs_review: "Perlu Review",
   matched: "Sudah Dimapping",
+  ignored: "Diabaikan"
 };
 
 function formatRp(raw: string | null | undefined) {
@@ -53,7 +54,7 @@ function formatRp(raw: string | null | undefined) {
 export default function SyncPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [products, setProducts] = useState<ProductWithStatus[]>([]);
-  const [counts, setCounts] = useState({ unmatched: 0, needs_review: 0, matched: 0 });
+  const [counts, setCounts] = useState({ unmatched: 0, needs_review: 0, matched: 0, ignored: 0 });
   const [tab, setTab] = useState<Tab>("unmatched");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -201,6 +202,54 @@ export default function SyncPage() {
     }
   };
 
+  const handleIgnore = async (kode: string) => {
+    if (!profile) return;
+    try {
+      const res = await fetch("/api/sync/ignore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kode_accurate: kode, action: "ignore", triggered_by: profile.id })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showToast("Produk disembunyikan!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch(err: any) {
+      showToast("Gagal menyembunyikan: " + err.message, "error");
+    }
+  };
+
+  const handleRestore = async (kode: string) => {
+    if (!profile) return;
+    try {
+      const res = await fetch("/api/sync/ignore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kode_accurate: kode, action: "restore", triggered_by: profile.id })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showToast("Produk dikembalikan ke Belum Dimapping!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch(err: any) {
+      showToast("Gagal mengembalikan: " + err.message, "error");
+    }
+  };
+
+  const handleUnmatch = async (kode: string) => {
+    if (!profile || !confirm("Yakin ingin melepas mapping produk ini?")) return;
+    try {
+      const res = await fetch("/api/sync/unmatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kode_accurate: kode, triggered_by: profile.id })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showToast("Mapping dilepas!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch(err: any) {
+      showToast("Gagal melepas mapping: " + err.message, "error");
+    }
+  };
+
   const handleSyncPrice = async (kode: string) => {
     if (!profile || syncingPrice.has(kode)) return;
     setSyncingPrice((prev) => new Set(prev).add(kode));
@@ -278,6 +327,8 @@ export default function SyncPage() {
     setCsvUploading(true);
     showToast("Mem-parsing CSV di browser...", "loading");
 
+    // Note: Assuming PapaParse is available globally or imported
+    // @ts-ignore
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -316,7 +367,7 @@ export default function SyncPage() {
            if (csvInputRef.current) csvInputRef.current.value = "";
         }
       },
-      error: (err) => {
+      error: (err: any) => {
         showToast("Gagal membaca CSV: " + err.message, "error");
         setCsvUploading(false);
       }
@@ -430,7 +481,7 @@ export default function SyncPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 shrink-0 px-4">
-        {(["unmatched", "needs_review", "matched"] as Tab[]).map((t) => (
+        {(["unmatched", "needs_review", "matched", "ignored"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => handleTabChange(t)}
@@ -442,7 +493,8 @@ export default function SyncPage() {
             {TAB_LABELS[t]}
             <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${t === "unmatched" ? "bg-red-100 text-red-700" :
                 t === "needs_review" ? "bg-amber-100 text-amber-700" :
-                  "bg-green-100 text-green-700"
+                  t === "ignored" ? "bg-slate-200 text-slate-700" :
+                    "bg-green-100 text-green-700"
               }`}>
               {counts[t]}
             </span>
@@ -557,9 +609,16 @@ export default function SyncPage() {
                   </div>
 
                   {/* Right: action */}
-                  <div className="shrink-0 flex flex-col gap-1.5">
+                  <div className="shrink-0 flex items-center gap-1.5">
                     {tab === "matched" ? (
                       <>
+                        <button
+                          onClick={() => handleUnmatch(kode)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-100 hover:bg-rose-200 rounded-lg transition-colors"
+                        >
+                          <Link2Off className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Lepas</span>
+                        </button>
                         <button
                           onClick={() => handleSyncPrice(kode)}
                           disabled={isSyncing || !p["SP"]}
@@ -570,27 +629,39 @@ export default function SyncPage() {
                             ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                             : <Zap className="w-3.5 h-3.5" />
                           }
-                          Sync Harga
-                        </button>
-                        <button
-                          onClick={() => { setMatchTarget(p); setWooSearch(""); setSelectedWoo(null); setVariations([]); }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                        >
-                          <Link2 className="w-3.5 h-3.5" />
-                          Ganti
+                          <span className="hidden sm:inline">Sync</span>
                         </button>
                       </>
-                    ) : (
+                    ) : tab === "ignored" ? (
                       <button
-                        onClick={() => { setMatchTarget(p); setWooSearch(""); setSelectedWoo(null); setVariations([]); }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${tab === "needs_review"
-                            ? "text-amber-700 bg-amber-100 hover:bg-amber-200"
-                            : "text-blue-700 bg-blue-100 hover:bg-blue-200"
-                          }`}
+                        onClick={() => handleRestore(kode)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
                       >
-                        <Link2 className="w-3.5 h-3.5" />
-                        {tab === "needs_review" ? "Konfirmasi" : "Match"}
+                        <Undo2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Kembalikan</span>
                       </button>
+                    ) : (
+                      <>
+                        {tab === "unmatched" && (
+                          <button
+                            onClick={() => handleIgnore(kode)}
+                            title="Abaikan produk ini"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                          >
+                            <EyeOff className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setMatchTarget(p); setWooSearch(""); setSelectedWoo(null); setVariations([]); }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${tab === "needs_review"
+                              ? "text-amber-700 bg-amber-100 hover:bg-amber-200"
+                              : "text-blue-700 bg-blue-100 hover:bg-blue-200"
+                            }`}
+                        >
+                          <Link2 className="w-3.5 h-3.5" />
+                          {tab === "needs_review" ? "Konfirmasi" : "Match"}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

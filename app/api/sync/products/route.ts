@@ -3,7 +3,7 @@ import { createServiceClient, PIC_CATEGORY_KEYWORDS, type AccurateProduct, type 
 
 export type ProductWithStatus = AccurateProduct & {
   _mapping: WooMapping | null;
-  _status: "unmatched" | "needs_review" | "matched";
+  _status: "unmatched" | "needs_review" | "matched" | "ignored";
 };
 
 export async function GET(req: NextRequest) {
@@ -12,11 +12,10 @@ export async function GET(req: NextRequest) {
   const picCategory = searchParams.get("pic_category"); // komponen | laptop | aksesoris | null (admin = all)
   const tab = searchParams.get("tab") || "unmatched";   // unmatched | needs_review | matched
 
-  // Fetch all active mappings
+  // Fetch all mappings (including inactive/ignored ones)
   const { data: mappings, error: mappingErr } = await supabase
     .from("product_woo_mapping")
-    .select("*")
-    .eq("is_active", true);
+    .select("*");
 
   if (mappingErr) {
     return NextResponse.json({ error: mappingErr.message }, { status: 500 });
@@ -96,7 +95,11 @@ export async function GET(req: NextRequest) {
     const mapping = mappingByKode.get(kode) ?? null;
     let status: ProductWithStatus["_status"] = "unmatched";
     if (mapping) {
-      status = mapping.needs_review ? "needs_review" : "matched";
+      if (!mapping.is_active) {
+        status = "ignored";
+      } else {
+        status = mapping.needs_review ? "needs_review" : "matched";
+      }
     }
     return { ...p, _mapping: mapping, _status: status };
   });
@@ -110,6 +113,7 @@ export async function GET(req: NextRequest) {
     unmatched: withStatus.filter((p) => p._status === "unmatched").length,
     needs_review: withStatus.filter((p) => p._status === "needs_review").length,
     matched: withStatus.filter((p) => p._status === "matched").length,
+    ignored: withStatus.filter((p) => p._status === "ignored").length,
   };
 
   return NextResponse.json({ products: filtered, counts });
