@@ -14,11 +14,10 @@ export async function POST(req: NextRequest) {
 
     // Fetch unmatched Accurate products
     const { data: accProducts, error: errFetch } = await supabase
-      .from("product_accurate")
-      .select("kode_accurate, NAMA BARANG")
-      .eq("is_active", true);
+      .from("products")
+      .select("*");
 
-    if (errFetch || !accProducts) throw new Error("Failed to fetch accurate products");
+    if (errFetch || !accProducts) throw new Error("Failed to fetch accurate products: " + errFetch?.message);
 
     // Fetch existing mappings
     const { data: mappings } = await supabase.from("product_woo_mapping").select("kode_accurate");
@@ -29,8 +28,9 @@ export async function POST(req: NextRequest) {
     const unmatchedAccByName = new Map<string, any>();
     
     for (const p of accProducts as any[]) {
-      if (!mappedKodes.has(p.kode_accurate)) {
-        unmatchedAccByKode.set(p.kode_accurate, p);
+      const kodeAcc = p["Kode Accurate"];
+      if (kodeAcc && !mappedKodes.has(kodeAcc)) {
+        unmatchedAccByKode.set(kodeAcc, p);
         if (p["NAMA BARANG"]) {
            unmatchedAccByName.set(p["NAMA BARANG"].trim().toLowerCase(), p);
         }
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
         }
 
         upsertQueue.push({
-          kode_accurate: matchedAcc.kode_accurate,
+          kode_accurate: matchedAcc["Kode Accurate"],
           woo_product_id: wooProductId,
           woo_variation_id: wooVariationId,
           woo_name: wooNama,
@@ -120,13 +120,13 @@ export async function POST(req: NextRequest) {
         });
 
         results.push({
-          kode: matchedAcc.kode_accurate,
+          kode: matchedAcc["Kode Accurate"],
           status: "matched",
           woo_name: wooNama
         });
 
         // Remove from unmatched map so we don't map twice
-        unmatchedAccByKode.delete(matchedAcc.kode_accurate);
+        unmatchedAccByKode.delete(matchedAcc["Kode Accurate"]);
         if (matchedAcc["NAMA BARANG"]) {
            unmatchedAccByName.delete(matchedAcc["NAMA BARANG"].trim().toLowerCase());
         }
