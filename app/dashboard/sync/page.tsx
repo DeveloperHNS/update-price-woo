@@ -10,6 +10,7 @@ import {
   Search, RefreshCw, AlertCircle, CheckCircle2,
   Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2, FileUp, EyeOff, Undo2
 } from "lucide-react";
+import { formatRp } from "@/lib/format";
 
 type Tab = "unmatched" | "needs_review" | "matched" | "ignored";
 
@@ -43,13 +44,6 @@ const TAB_LABELS: Record<Tab, string> = {
   ignored: "Diabaikan"
 };
 
-function formatRp(raw: string | null | undefined) {
-  if (!raw) return "—";
-  const cleaned = raw.replace(/[Rp\s.]/gi, "").replace(",", ".");
-  const num = parseFloat(cleaned);
-  if (isNaN(num)) return raw;
-  return "Rp " + num.toLocaleString("id-ID");
-}
 
 export default function SyncPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);

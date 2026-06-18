@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import { fetchAll, wooFetch, appendCache } from "@/lib/api";
 import { logActivity } from "@/lib/activity-log";
+import { formatNumber, parseFormattedNumber } from "@/lib/format";
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
-import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, ArrowUp, ArrowDown, Camera, RotateCcw } from "lucide-react";
+import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
+import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, Camera, RotateCcw, GripVertical } from "lucide-react";
 import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 
 export default function UploadProductPage() {
@@ -150,12 +152,15 @@ export default function UploadProductPage() {
     }
   };
 
-  const moveImage = (idx: number, dir: 'up' | 'down') => {
+  const handleDragEnd = (result: DropResult) => {
+    if (!result.destination) return;
+    const from = result.source.index;
+    const to = result.destination.index;
+    if (from === to) return;
     setImages(prev => {
       const arr = [...prev];
-      const to = dir === 'up' ? idx - 1 : idx + 1;
-      if (to < 0 || to >= arr.length) return prev;
-      [arr[idx], arr[to]] = [arr[to], arr[idx]];
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
       return arr;
     });
   };
@@ -570,38 +575,53 @@ export default function UploadProductPage() {
             {images.length > 0 && (
               <div className="mt-4 space-y-2">
                 <p className="text-xs text-slate-400">
-                  Gunakan <span className="font-semibold">↑ ↓</span> untuk urutan.{" "}
+                  <span className="font-semibold">Drag & drop</span> untuk mengubah urutan.{" "}
                   <span className="font-semibold text-blue-600">Gambar pertama = Featured Image.</span>
                 </p>
-                <div className="space-y-2">
-                  {images.map((img, i) => (
-                    <div key={img.id} className="flex items-center gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img.src} alt={img.alt} className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-lg shrink-0 border border-slate-200" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {i === 0 && <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-bold">★ Featured</span>}
-                          <span className="text-xs text-slate-500 truncate">{img.alt}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-300 mt-0.5 font-mono">ID: {img.id}</p>
+                <DragDropContext onDragEnd={handleDragEnd}>
+                  <Droppable droppableId="image-list">
+                    {(provided) => (
+                      <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                        {images.map((img, i) => (
+                          <Draggable key={img.id} draggableId={String(img.id)} index={i}>
+                            {(dragProvided, snapshot) => (
+                              <div
+                                ref={dragProvided.innerRef}
+                                {...dragProvided.draggableProps}
+                                className={`flex items-center gap-3 p-2.5 bg-slate-50 border rounded-xl transition-colors ${
+                                  snapshot.isDragging
+                                    ? "border-blue-400 bg-blue-50 shadow-lg ring-2 ring-blue-200"
+                                    : "border-slate-200 hover:border-slate-300"
+                                }`}
+                              >
+                                {/* Drag handle */}
+                                <div {...dragProvided.dragHandleProps} className="cursor-grab active:cursor-grabbing p-1 text-slate-300 hover:text-slate-500 transition-colors shrink-0">
+                                  <GripVertical className="w-4 h-4" />
+                                </div>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={img.src} alt={img.alt} className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-lg shrink-0 border border-slate-200" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {i === 0 && <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-bold">★ Featured</span>}
+                                    <span className="text-xs text-slate-500 truncate">{img.alt}</span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-300 mt-0.5 font-mono">ID: {img.id}</p>
+                                </div>
+                                <div className="flex items-center shrink-0">
+                                  <button type="button" onClick={() => setImages(prev => prev.filter(x => x.id !== img.id))}
+                                    className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200">
+                                    <XIcon className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
                       </div>
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button type="button" onClick={() => moveImage(i, 'up')} disabled={i === 0}
-                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-slate-200">
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button type="button" onClick={() => moveImage(i, 'down')} disabled={i === images.length - 1}
-                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg disabled:opacity-20 disabled:cursor-not-allowed transition-colors border border-transparent hover:border-slate-200">
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        </button>
-                        <button type="button" onClick={() => setImages(prev => prev.filter(x => x.id !== img.id))}
-                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200">
-                          <XIcon className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    )}
+                  </Droppable>
+                </DragDropContext>
               </div>
             )}
           </div>
@@ -641,21 +661,23 @@ export default function UploadProductPage() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Harga Normal (Rp)</label>
                   <input
-                    type="number"
-                    value={regularPrice} onChange={e => setRegularPrice(e.target.value)}
-                    onWheel={e => (e.target as HTMLElement).blur()}
+                    type="text"
+                    inputMode="numeric"
+                    value={regularPrice ? formatNumber(regularPrice) : ""}
+                    onChange={e => setRegularPrice(parseFormattedNumber(e.target.value))}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                    placeholder="100000"
+                    placeholder="100.000"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Harga Coret (Rp)</label>
                   <input
-                    type="number"
-                    value={salePrice} onChange={e => setSalePrice(e.target.value)}
-                    onWheel={e => (e.target as HTMLElement).blur()}
+                    type="text"
+                    inputMode="numeric"
+                    value={salePrice ? formatNumber(salePrice) : ""}
+                    onChange={e => setSalePrice(parseFormattedNumber(e.target.value))}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                    placeholder="80000"
+                    placeholder="80.000"
                   />
                 </div>
               </div>
@@ -894,18 +916,16 @@ export default function UploadProductPage() {
                               placeholder="SKU" />
                           </div>
                           <div className="col-span-2">
-                            <input type="number" value={v.regular_price}
-                              onChange={e => { const nv = [...variations]; nv[i].regular_price = e.target.value; setVariations(nv); }}
-                              onWheel={e => (e.target as HTMLElement).blur()}
+                            <input type="text" inputMode="numeric" value={v.regular_price ? formatNumber(v.regular_price) : ""}
+                              onChange={e => { const nv = [...variations]; nv[i].regular_price = parseFormattedNumber(e.target.value); setVariations(nv); }}
                               className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder="Rp" />
+                              placeholder="100.000" />
                           </div>
                           <div className="col-span-2">
-                            <input type="number" value={v.sale_price}
-                              onChange={e => { const nv = [...variations]; nv[i].sale_price = e.target.value; setVariations(nv); }}
-                              onWheel={e => (e.target as HTMLElement).blur()}
+                            <input type="text" inputMode="numeric" value={v.sale_price ? formatNumber(v.sale_price) : ""}
+                              onChange={e => { const nv = [...variations]; nv[i].sale_price = parseFormattedNumber(e.target.value); setVariations(nv); }}
                               className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-red-600"
-                              placeholder="Rp" />
+                              placeholder="80.000" />
                           </div>
                           <div className="col-span-1 flex justify-end">
                             <button type="button" onClick={() => { const nv = [...variations]; nv.splice(i, 1); setVariations(nv); }}
@@ -945,19 +965,17 @@ export default function UploadProductPage() {
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <label className="text-[10px] text-slate-400 font-medium mb-1 block">Harga Normal</label>
-                                <input type="number" value={v.regular_price}
-                                  onChange={e => { const nv = [...variations]; nv[i].regular_price = e.target.value; setVariations(nv); }}
-                                  onWheel={e => (e.target as HTMLElement).blur()}
+                                <input type="text" inputMode="numeric" value={v.regular_price ? formatNumber(v.regular_price) : ""}
+                                  onChange={e => { const nv = [...variations]; nv[i].regular_price = parseFormattedNumber(e.target.value); setVariations(nv); }}
                                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                                  placeholder="Rp" />
+                                  placeholder="100.000" />
                               </div>
                               <div>
                                 <label className="text-[10px] text-slate-400 font-medium mb-1 block">Harga Coret</label>
-                                <input type="number" value={v.sale_price}
-                                  onChange={e => { const nv = [...variations]; nv[i].sale_price = e.target.value; setVariations(nv); }}
-                                  onWheel={e => (e.target as HTMLElement).blur()}
+                                <input type="text" inputMode="numeric" value={v.sale_price ? formatNumber(v.sale_price) : ""}
+                                  onChange={e => { const nv = [...variations]; nv[i].sale_price = parseFormattedNumber(e.target.value); setVariations(nv); }}
                                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 text-red-600"
-                                  placeholder="Rp" />
+                                  placeholder="80.000" />
                               </div>
                             </div>
                           </div>
