@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
 import { logActivity } from "@/lib/activity-log";
+import { formatRp } from "@/lib/format";
 import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2 } from "lucide-react";
 
 type WooCategory = {
@@ -15,13 +16,6 @@ type WooCategory = {
 const PER_PAGE = 20;
 type StockState = "instock" | "outofstock";
 
-function formatRp(raw: string | null | undefined) {
-  if (!raw) return "—";
-  const cleaned = raw.replace(/[Rp\s.]/gi, "").replace(",", ".");
-  const num = parseFloat(cleaned);
-  if (isNaN(num)) return raw;
-  return "Rp " + num.toLocaleString("id-ID");
-}
 
 export default function ManageProducts() {
   const [products, setProducts] = useState<WooProduct[]>([]);
