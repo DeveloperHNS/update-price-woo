@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 
 export type UserRole = "admin" | "pic" | "product_staff";
 export type UserStatus = "pending" | "active" | "rejected";
-export type PicCategory = "komponen" | "aksesoris" | "laptop";
+export type PicCategory = "komponen" | "aksesoris" | "laptop" | "dealer";
 
 export interface UserProfile {
   id: string;
@@ -10,7 +10,33 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   full_name: string | null;
-  pic_category: PicCategory | null;
+  pic_category: string | null;
+  is_super_admin: boolean;
+}
+
+export interface CategoryAccess {
+  woo: string | "ALL" | null;
+  erp: string | "ALL" | null;
+}
+
+export function parseCategoryAccess(raw: string | null): CategoryAccess {
+  if (!raw) return { woo: null, erp: null };
+  if (raw === "ALL") return { woo: "ALL", erp: "ALL" };
+  
+  try {
+    if (raw.startsWith("{")) {
+      const parsed = JSON.parse(raw);
+      return {
+        woo: parsed.woo ?? null,
+        erp: parsed.erp ?? null
+      };
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // Fallback for old comma-separated woo categories
+  return { woo: raw, erp: null };
 }
 
 /**
@@ -31,13 +57,18 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
       .eq("id", user.id)
       .single();
 
+    const email = user.email ?? "";
+    const superAdmins = (process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase());
+    const is_super_admin = superAdmins.includes(email.toLowerCase());
+
     return {
       id: user.id,
-      email: user.email ?? "",
+      email: email,
       role: (profile?.role as UserRole) ?? "pic",
       status: (profile?.status as UserStatus) ?? "pending",
       full_name: profile?.full_name ?? null,
-      pic_category: (profile?.pic_category as PicCategory) ?? null,
+      pic_category: profile?.pic_category ?? null,
+      is_super_admin,
     };
   } catch {
     return null;

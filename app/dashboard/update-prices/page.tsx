@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
-import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal } from "lucide-react";
+import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal, CloudDownload } from "lucide-react";
 import { formatRp } from "@/lib/format";
 
 
@@ -43,11 +44,10 @@ function MultiSelectDropdown({
     <div className="relative w-full sm:w-auto" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center justify-between gap-2 px-3 py-2.5 w-full sm:w-52 text-left border rounded-xl text-sm outline-none bg-white transition-colors ${
-          selected.length > 0
-            ? "border-blue-400 bg-blue-50 text-blue-700"
-            : "border-slate-200 text-slate-600 hover:border-slate-300"
-        }`}
+        className={`flex items-center justify-between gap-2 px-3 py-2.5 w-full sm:w-52 text-left border rounded-xl text-sm outline-none bg-white transition-colors ${selected.length > 0
+          ? "border-blue-400 bg-blue-50 text-blue-700"
+          : "border-slate-200 text-slate-600 hover:border-slate-300"
+          }`}
       >
         <span className="truncate text-sm">
           {selected.length === 0
@@ -60,7 +60,7 @@ function MultiSelectDropdown({
               role="button"
               tabIndex={0}
               onClick={(e) => { e.stopPropagation(); onChange([]); }}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onChange([]); }}}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onChange([]); } }}
               className="p-0.5 hover:text-red-500 rounded transition-colors"
             >
               <X className="w-3 h-3" />
@@ -105,6 +105,7 @@ function MultiSelectDropdown({
 }
 
 export default function UpdatePricesPage() {
+  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [products, setProducts] = useState<ProductWithStatus[]>([]);
   const [loading, setLoading] = useState(false);
@@ -114,8 +115,17 @@ export default function UpdatePricesPage() {
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
+  const [confirmModal, setConfirmModal] = useState(false);
   const [edits, setEdits] = useState<Record<string, { cp: string; price: string }>>({});
   const [saving, setSaving] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, catFilter, brandFilter, statusFilter]);
 
   const uniqueCategories = Array.from(new Set(products.map(p => p["KATEGORI"]).filter(Boolean))).sort() as string[];
   const uniqueBrands = Array.from(new Set(products.map(p => p["NAMA BRAND"]).filter(Boolean))).sort() as string[];
@@ -145,10 +155,34 @@ export default function UpdatePricesPage() {
 
   useEffect(() => {
     getCurrentProfile().then((p) => {
+      if (p?.role === "product_staff") {
+        router.replace("/dashboard");
+        return;
+      }
       setProfile(p);
       loadProducts(p?.pic_category ?? null);
     });
-  }, [loadProducts]);
+  }, [loadProducts, router]);
+
+  const handlePullSync = async () => {
+    setConfirmModal(false);
+    setPulling(true);
+    showToast("Sedang menarik data dari Google Sheet...", "loading");
+
+    try {
+      const res = await fetch("/api/sync/pull", { method: "POST" });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Gagal menarik data");
+
+      showToast(data.message || `Berhasil ditarik!`, "success");
+      loadProducts(profile?.pic_category ?? null);
+    } catch (err: any) {
+      showToast(err.message, "error");
+    } finally {
+      setPulling(false);
+    }
+  };
 
   const handleEditChange = (kode: string, field: "cp" | "price", value: string) => {
     setEdits((prev) => {
@@ -192,16 +226,20 @@ export default function UpdatePricesPage() {
   };
 
   const filtered = products.filter((p) => {
-    const q = search.toLowerCase();
-    const matchSearch = !search.trim() ||
-      (p["Kode Accurate"] ?? "").toLowerCase().includes(q) ||
-      (p["NAMA BARANG"] ?? "").toLowerCase().includes(q) ||
-      (p["KATEGORI"] ?? "").toLowerCase().includes(q);
+    const q = search.toLowerCase().trim();
+    const tokens = q ? q.split(/\s+/) : [];
+
+    const searchableText = `${p["Kode Accurate"] || ""} ${p["NAMA BARANG"] || ""} ${p["KATEGORI"] || ""}`.toLowerCase();
+    const matchSearch = tokens.length === 0 || tokens.every(token => searchableText.includes(token));
+
     const matchCat = catFilter.length === 0 || catFilter.includes(p["KATEGORI"] || "");
     const matchBrand = brandFilter.length === 0 || brandFilter.includes(p["NAMA BRAND"] || "");
     const matchStatus = statusFilter.length === 0 || statusFilter.includes(p["STATUS"] || "Aktif");
     return matchSearch && matchCat && matchBrand && matchStatus;
   });
+
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+  const paginatedProducts = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const isAdmin = profile?.role === "admin";
   const hasEdits = Object.keys(edits).length > 0;
@@ -220,6 +258,15 @@ export default function UpdatePricesPage() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
+            onClick={() => setConfirmModal(true)}
+            disabled={loading || saving || pulling}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors disabled:opacity-50"
+            title="Import semua data dari Google Sheet"
+          >
+            <CloudDownload className={`w-4 h-4 ${pulling ? "animate-pulse" : ""}`} />
+            <span className="hidden sm:inline">{pulling ? "Mengimport..." : "Import Data"}</span>
+          </button>
+          <button
             onClick={() => loadProducts(profile?.pic_category ?? null)}
             disabled={loading || saving}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
@@ -230,11 +277,10 @@ export default function UpdatePricesPage() {
           <button
             onClick={handleSaveAll}
             disabled={!hasEdits || saving}
-            className={`flex items-center gap-1.5 px-3 sm:px-5 py-2 text-sm font-semibold text-white rounded-xl transition-all shadow-md ${
-              hasEdits && !saving
-                ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/30"
-                : "bg-slate-300 shadow-none cursor-not-allowed"
-            }`}
+            className={`flex items-center gap-1.5 px-3 sm:px-5 py-2 text-sm font-semibold text-white rounded-xl transition-all shadow-md ${hasEdits && !saving
+              ? "bg-blue-600 hover:bg-blue-700 shadow-blue-500/30"
+              : "bg-slate-300 shadow-none cursor-not-allowed"
+              }`}
           >
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             <span>
@@ -262,11 +308,10 @@ export default function UpdatePricesPage() {
           {/* Mobile: toggle advanced filters */}
           <button
             onClick={() => setShowFilters(f => !f)}
-            className={`sm:hidden flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors border shrink-0 ${
-              activeFilterCount > 0 || showFilters
-                ? "bg-blue-50 border-blue-300 text-blue-700"
-                : "bg-white border-slate-200 text-slate-600"
-            }`}
+            className={`sm:hidden flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors border shrink-0 ${activeFilterCount > 0 || showFilters
+              ? "bg-blue-50 border-blue-300 text-blue-700"
+              : "bg-white border-slate-200 text-slate-600"
+              }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
             {activeFilterCount > 0 && (
@@ -344,7 +389,7 @@ export default function UpdatePricesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {filtered.map((p) => {
+                  {paginatedProducts.map((p) => {
                     const kode = p["Kode Accurate"] ?? "";
                     const isEdited = edits[kode] !== undefined;
                     const cpValue = isEdited ? edits[kode].cp : (p["CP"] || "");
@@ -379,9 +424,8 @@ export default function UpdatePricesPage() {
                             value={cpValue}
                             onChange={(e) => handleEditChange(kode, "cp", e.target.value)}
                             placeholder="e.g. 1.500.000"
-                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-colors ${
-                              isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50 hover:border-slate-300"
-                            }`}
+                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-colors ${isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                              }`}
                           />
                         </td>
                         <td className="px-4 py-3">
@@ -390,9 +434,8 @@ export default function UpdatePricesPage() {
                             value={priceValue}
                             onChange={(e) => handleEditChange(kode, "price", e.target.value)}
                             placeholder="e.g. 1.800.000"
-                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium text-emerald-700 transition-colors ${
-                              isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50 hover:border-slate-300"
-                            }`}
+                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium text-emerald-700 transition-colors ${isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                              }`}
                           />
                         </td>
                       </tr>
@@ -403,8 +446,8 @@ export default function UpdatePricesPage() {
             </div>
 
             {/* ── Mobile cards (<sm) ── */}
-            <div className="sm:hidden p-3 space-y-2.5 pb-28">
-              {filtered.map((p) => {
+            <div className="sm:hidden p-3 space-y-2.5 pb-32">
+              {paginatedProducts.map((p) => {
                 const kode = p["Kode Accurate"] ?? "";
                 const isEdited = edits[kode] !== undefined;
                 const cpValue = isEdited ? edits[kode].cp : (p["CP"] || "");
@@ -413,9 +456,8 @@ export default function UpdatePricesPage() {
                 return (
                   <div
                     key={kode}
-                    className={`bg-white rounded-2xl border p-4 shadow-sm transition-colors ${
-                      isEdited ? "border-blue-300 bg-blue-50/20" : "border-slate-200"
-                    }`}
+                    className={`bg-white rounded-2xl border p-4 shadow-sm transition-colors ${isEdited ? "border-blue-300 bg-blue-50/20" : "border-slate-200"
+                      }`}
                   >
                     {/* Header */}
                     <div className="flex items-start justify-between gap-2 mb-3">
@@ -456,9 +498,8 @@ export default function UpdatePricesPage() {
                           value={cpValue}
                           onChange={(e) => handleEditChange(kode, "cp", e.target.value)}
                           placeholder="e.g. 1.500.000"
-                          className={`w-full px-3 py-2.5 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-                            isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50"
-                          }`}
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50"
+                            }`}
                         />
                       </div>
                       <div>
@@ -470,9 +511,8 @@ export default function UpdatePricesPage() {
                           value={priceValue}
                           onChange={(e) => handleEditChange(kode, "price", e.target.value)}
                           placeholder="e.g. 1.800.000"
-                          className={`w-full px-3 py-2.5 border rounded-xl text-sm font-medium text-emerald-700 outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-                            isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50"
-                          }`}
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm font-medium text-emerald-700 outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50"
+                            }`}
                         />
                       </div>
                     </div>
@@ -483,6 +523,34 @@ export default function UpdatePricesPage() {
           </>
         )}
       </div>
+
+      {/* ── Pagination Controls ── */}
+      {totalPages > 1 && !loading && (
+        <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 bg-white border-t border-slate-200 shrink-0 gap-3 pb-24 sm:pb-3">
+          <p className="text-sm text-slate-500 hidden sm:block">
+            Menampilkan {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} dari {filtered.length} produk
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 bg-white"
+            >
+              Sebelumnya
+            </button>
+            <span className="text-sm font-medium text-slate-700 mx-2">
+              Hal {currentPage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 bg-white"
+            >
+              Selanjutnya
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Mobile sticky save button ── */}
       {hasEdits && (
@@ -500,17 +568,47 @@ export default function UpdatePricesPage() {
 
       {/* ── Toast ── */}
       {toast && (
-        <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-5 sm:translate-x-0 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 bg-white max-w-xs sm:max-w-sm w-full ${
-          toast.type === "success" ? "border-green-200 text-green-800 shadow-green-100" :
-          toast.type === "error"   ? "border-red-200 text-red-700 shadow-red-100" :
-                                     "border-blue-200 text-blue-700 shadow-blue-100"
-        }`}>
+        <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-5 sm:translate-x-0 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 bg-white max-w-xs sm:max-w-sm w-full ${toast.type === "success" ? "border-green-200 text-green-800 shadow-green-100" :
+          toast.type === "error" ? "border-red-200 text-red-700 shadow-red-100" :
+            "border-blue-200 text-blue-700 shadow-blue-100"
+          }`}>
           {toast.type === "loading"
             ? <RefreshCw className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
             : toast.type === "success"
               ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
               : <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}
           <span className="flex-1">{toast.msg}</span>
+        </div>
+      )}
+
+      {/* ── Confirm Modal ── */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center mb-4">
+                <CloudDownload className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Import Data Sheet?</h3>
+              <p className="text-slate-500 text-sm leading-relaxed">
+                Aksi ini akan menyedot <b>seluruh data</b> (6000+ baris) dari Google Sheet kamu secara otomatis. Proses ini akan memakan waktu beberapa detik. Lanjutkan?
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button 
+                onClick={() => setConfirmModal(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={handlePullSync}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-lg shadow-blue-500/30 transition-colors flex items-center gap-2"
+              >
+                <CloudDownload className="w-4 h-4" /> Ya, Import Sekarang
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

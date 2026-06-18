@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
-import { logActivity } from "@/lib/activity-log";
 import { formatRp } from "@/lib/format";
-import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2 } from "lucide-react";
+import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2, ListTree } from "lucide-react";
+import VarEditModal from "./components/VarEditModal";
+import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 
 type WooCategory = {
   id: number;
@@ -13,7 +14,7 @@ type WooCategory = {
   count: number;
 };
 
-const PER_PAGE = 20;
+const PER_PAGE = 50;
 type StockState = "instock" | "outofstock";
 
 
@@ -22,6 +23,11 @@ export default function ManageProducts() {
   const [categories, setCategories] = useState<WooCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    getCurrentProfile().then(setProfile);
+  }, []);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -44,6 +50,7 @@ export default function ManageProducts() {
   const [updatingStatus, setUpdatingStatus] = useState<Set<number>>(new Set());
   const [deleting, setDeleting] = useState<Set<number>>(new Set());
   const [productToDelete, setProductToDelete] = useState<WooProduct | null>(null);
+  const [varEditModalProduct, setVarEditModalProduct] = useState<WooProduct | null>(null);
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
@@ -158,12 +165,42 @@ export default function ManageProducts() {
           page,
           orderby: "date",
           order: "desc",
-          _fields: "id,name,sku,type,regular_price,parent,stock_status,status",
+          _fields: "id,name,sku,type,regular_price,sale_price,parent,stock_status,status",
         };
-        if (debouncedSearch) params.search = debouncedSearch;
-        if (selCatId !== null) params.category = selCatId;
+        
+        const access = parseCategoryAccess(profile?.pic_category ?? null);
+        const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
+        
+        if (isRestricted && !access.woo) {
+          setProducts([]);
+          setHasNextPage(false);
+          setLoading(false);
+          return;
+        }
 
-        const items = await wooFetch("products", "GET", undefined, params) as WooProduct[];
+        if (selCatId !== null) {
+          params.category = selCatId;
+        } else if (isRestricted) {
+          params.category = access.woo as string;
+        }
+
+        let items: WooProduct[] = [];
+        if (debouncedSearch) {
+          const [searchRes, skuRes] = await Promise.all([
+            wooFetch("products", "GET", undefined, { ...params, search: debouncedSearch }),
+            wooFetch("products", "GET", undefined, { ...params, sku: debouncedSearch })
+          ]);
+          
+          const combined = [...(searchRes as WooProduct[]), ...(skuRes as WooProduct[])];
+          const uniqueMap = new Map<number, WooProduct>();
+          combined.forEach(p => {
+            if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
+          });
+          items = Array.from(uniqueMap.values());
+        } else {
+          items = await wooFetch("products", "GET", undefined, params) as WooProduct[];
+        }
+
         const parentProducts = items.filter((item) => !item.parent || item.parent === 0);
         setProducts(parentProducts);
         setHasNextPage(items.length === PER_PAGE);
@@ -185,7 +222,7 @@ export default function ManageProducts() {
     };
 
     loadProductsPage();
-  }, [page, debouncedSearch, selCatId]);
+  }, [page, debouncedSearch, selCatId, profile?.pic_category, profile?.role]);
 
   const showToast = (msg: string, type: "success"|"error"|"loading") => {
     setToast({ msg, type });
@@ -209,7 +246,7 @@ export default function ManageProducts() {
           `products/${id}/variations`,
           "GET",
           undefined,
-          { _fields: "id,sku,regular_price,attributes,stock_status", per_page: 100, page: 1 }
+          { _fields: "id,sku,regular_price,sale_price,attributes,stock_status", per_page: 100, page: 1 }
         ) as WooVariation[];
         setVarCache(prev => ({ ...prev, [id]: vars }));
         fetchMappedPrices(vars.map(v => v.id));
@@ -221,17 +258,31 @@ export default function ManageProducts() {
     }
   };
 
-  // Build category tree for dropdown
   const catTree = useMemo(() => {
+    const access = parseCategoryAccess(profile?.pic_category ?? null);
+    const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
+    let allowedCats = categories;
+    
+    if (isRestricted) {
+      if (!access.woo) return [];
+      const allowedIds = access.woo.split(",").map(id => parseInt(id, 10));
+      allowedCats = categories.filter(c => allowedIds.includes(c.id));
+      let tree = allowedCats.map(c => ({ ...c, depth: 0 }));
+      if (catSearch.trim()) {
+        tree = tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
+      }
+      return tree;
+    }
+
     const buildTree = (parentId = 0, depth = 0): any[] => {
-      return categories
+      return allowedCats
         .filter(c => c.parent === parentId)
         .flatMap(c => [{ ...c, depth }, ...buildTree(c.id, depth + 1)]);
     };
     const tree = buildTree();
     if (!catSearch.trim()) return tree;
     return tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
-  }, [categories, catSearch]);
+  }, [categories, catSearch, profile]);
 
   const selectedCatName = selCatId === null 
     ? "All Categories" 
@@ -249,7 +300,7 @@ export default function ManageProducts() {
       `products/${parentId}/variations`,
       "GET",
       undefined,
-      { _fields: "id,sku,regular_price,attributes,stock_status", per_page: 100, page: 1 }
+      { _fields: "id,sku,regular_price,sale_price,attributes,stock_status", per_page: 100, page: 1 }
     ) as WooVariation[];
     setVarCache((prev) => ({ ...prev, [parentId]: vars }));
     fetchMappedPrices(vars.map(v => v.id));
@@ -551,6 +602,8 @@ export default function ManageProducts() {
           onUpdate: sharedOnUpdate,
           showToast,
           mappedPrices,
+          isAdmin: profile?.role === "admin",
+          onOpenVarModal: () => setVarEditModalProduct(p),
         });
 
         return (
@@ -723,6 +776,27 @@ export default function ManageProducts() {
         </div>
       )}
 
+      {/* Variation Edit Modal */}
+      {varEditModalProduct && (
+        <VarEditModal 
+          product={varEditModalProduct} 
+          onClose={() => setVarEditModalProduct(null)} 
+          onSaved={() => {
+            // refresh product data or variations if needed
+            toggleExpand(varEditModalProduct.id);
+            if (expanded.has(varEditModalProduct.id)) {
+              // collapse and expand to reload
+              setExpanded(prev => {
+                const next = new Set(prev);
+                next.delete(varEditModalProduct.id);
+                return next;
+              });
+              setTimeout(() => toggleExpand(varEditModalProduct.id), 100);
+            }
+          }} 
+        />
+      )}
+
       {/* Toast */}
       {toast && (
         <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 max-w-xs ${
@@ -747,7 +821,7 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices }: {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices, isAdmin, onOpenVarModal }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -764,6 +838,8 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success"|"error"|"loading") => void;
   mappedPrices: Record<number, { cp: string | null; price: string | null; sp: string | null }>;
+  isAdmin: boolean;
+  onOpenVarModal: () => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -829,7 +905,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
         </td>
         <td className="px-3 py-3 hidden lg:table-cell">
           <div className="text-xs font-medium text-slate-600">
-            {isVar ? <span className="text-slate-300">—</span> : formatRp(mappedPrices[p.id]?.sp)}
+            {isVar ? <span className="text-slate-300">—</span> : <EditableCell id={p.id} field="sale_price" val={p.sale_price || ""} type="number" prodType="simple" prefix="Rp " productName={p.name} onUpdate={onUpdate} showToast={showToast} />}
           </div>
         </td>
         <td className="px-3 py-3">
@@ -872,18 +948,31 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
               {isPublished ? "Publish" : "Private"}
             </button>
             {/* Delete button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              disabled={isDeleting}
-              title="Hapus Produk"
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit disabled:opacity-40 disabled:cursor-not-allowed bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
-            >
-              {isDeleting
-                ? <RefreshCw className="w-3 h-3 animate-spin" />
-                : <Trash2 className="w-3 h-3" />
-              }
-              Hapus
-            </button>
+            {isAdmin && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                disabled={isDeleting}
+                title="Hapus Produk"
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit disabled:opacity-40 disabled:cursor-not-allowed bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
+              >
+                {isDeleting
+                  ? <RefreshCw className="w-3 h-3 animate-spin" />
+                  : <Trash2 className="w-3 h-3" />
+                }
+                Hapus
+              </button>
+            )}
+            {/* Edit Variasi button */}
+            {isVar && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenVarModal(); }}
+                title="Edit Variasi"
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100`}
+              >
+                <ListTree className="w-3 h-3" />
+                Edit Variasi
+              </button>
+            )}
           </div>
         </td>
       </tr>
@@ -935,7 +1024,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                 </td>
                 <td className="px-3 py-2 hidden lg:table-cell">
                   <div className="text-[11px] font-medium text-slate-500">
-                    {formatRp(mappedPrices[v.id]?.sp)}
+                    <EditableCell id={v.id} parentId={p.id} field="sale_price" val={v.sale_price || ""} type="number" prodType="variation" prefix="Rp " productName={`${p.name} #${v.id}`} onUpdate={onUpdate} showToast={showToast} />
                   </div>
                 </td>
                 <td className="px-3 py-2">
@@ -975,7 +1064,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
 }
 
 // ── ProductCard — mobile card view ──────────────────────────────────────────
-function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast }: {
+function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, isAdmin, onOpenVarModal }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -991,6 +1080,8 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
   onToggleVariationStock: (v: WooVariation) => void;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success" | "error" | "loading") => void;
+  isAdmin: boolean;
+  onOpenVarModal: () => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -1091,20 +1182,35 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
             <span className="text-[9px] text-slate-400 font-medium">{isPublished ? "Publish" : "Private"}</span>
           </div>
           {/* Delete toggle */}
-          <div className="flex flex-col items-center gap-0.5">
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              disabled={isDeleting}
-              title="Hapus Produk"
-              className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors disabled:opacity-40 bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
-            >
-              {isDeleting
-                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                : <Trash2 className="w-3.5 h-3.5" />
-              }
-            </button>
-            <span className="text-[9px] text-slate-400 font-medium">Hapus</span>
-          </div>
+          {isAdmin && (
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                disabled={isDeleting}
+                title="Hapus Produk"
+                className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors disabled:opacity-40 bg-red-50 text-red-600 border-red-200 hover:bg-red-100`}
+              >
+                {isDeleting
+                  ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  : <Trash2 className="w-3.5 h-3.5" />
+                }
+              </button>
+              <span className="text-[9px] text-slate-400 font-medium">Hapus</span>
+            </div>
+          )}
+          {/* Edit Variasi toggle */}
+          {isVar && (
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenVarModal(); }}
+                title="Edit Variasi"
+                className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100`}
+              >
+                <ListTree className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[9px] text-slate-400 font-medium">Variasi</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1167,7 +1273,7 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
 function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", productName = "", onUpdate, showToast }: {
   id: number;
   parentId?: number;
-  field: "sku" | "name" | "regular_price";
+  field: "sku" | "name" | "regular_price" | "sale_price";
   val: string;
   type: "text" | "number";
   prodType: "simple" | "variation";
@@ -1200,7 +1306,7 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", p
         
       await wooFetch(endpoint, 'PUT', { [field]: value });
       onUpdate(id, field, value, prodType, parentId);
-      const actionMap: Record<string, string> = { sku: "update_sku", name: "update_name", regular_price: "update_price" };
+      const actionMap: Record<string, string> = { sku: "update_sku", name: "update_name", regular_price: "update_price", sale_price: "update_sale_price" };
       logActivity({ action: actionMap[field] ?? `update_${field}`, product_id: id, product_name: productName || undefined, field, old_value: val || "", new_value: value });
       showToast("Saved successfully!", "success");
       setEditing(false);

@@ -9,12 +9,14 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, Camera, RotateCcw, GripVertical } from "lucide-react";
+import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 
 export default function UploadProductPage() {
   const [loading, setLoading] = useState(false);
   const [uploadStep, setUploadStep] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   // Product images
   const [images, setImages] = useState<{ id: number; src: string; alt: string }[]>([]);
@@ -69,6 +71,8 @@ export default function UploadProductPage() {
   const [varImgPickerOpen, setVarImgPickerOpen] = useState<number | null>(null);
 
   useEffect(() => {
+    getCurrentProfile().then(setProfile);
+    
     const loadWCData = async () => {
       try {
         const [cats, attrs] = await Promise.all([
@@ -112,6 +116,39 @@ export default function UploadProductPage() {
       showToast("Gagal upload gambar: " + (err instanceof Error ? err.message : "error"), "error");
     } finally {
       setUploadingImages(false);
+    }
+  };
+
+  const handleCreateCategory = async (catName: string) => {
+    if (!catName.trim()) return;
+    setLoading(true);
+    showToast(`Membuat kategori "${catName}"...`, "loading");
+    try {
+      const res = await wooFetch("products/categories", "POST", { name: catName });
+      setCategories(prev => [...prev, res].sort((a: any, b: any) => a.parent - b.parent || a.name.localeCompare(b.name)));
+      setSelCatIds(prev => [...prev, res.id]);
+      setCatSearch("");
+      showToast("Kategori berhasil dibuat", "success");
+    } catch (err: any) {
+      showToast("Gagal membuat kategori: " + err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = async (id: number, name: string) => {
+    if (!confirm(`Hapus kategori "${name}" secara permanen dari WooCommerce?`)) return;
+    setLoading(true);
+    showToast(`Menghapus kategori ${name}...`, "loading");
+    try {
+      await wooFetch(`products/categories/${id}`, "DELETE", undefined, { force: true });
+      setCategories(prev => prev.filter(c => c.id !== id));
+      setSelCatIds(prev => prev.filter(cid => cid !== id));
+      showToast("Kategori berhasil dihapus", "success");
+    } catch (err: any) {
+      showToast("Gagal menghapus kategori: " + err.message, "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -173,7 +210,7 @@ export default function UploadProductPage() {
     const parsedAttrs = varAttrs.map(a => ({
       id: a.id,
       name: a.name,
-      options: a.options.split(/[|,]/).map(s => s.trim()).filter(Boolean)
+      options: a.options.split(/[\r\n|,]+/).map(s => s.trim()).filter(Boolean)
     }));
     const cartesian = (arrays: any[][]): any[][] =>
       arrays.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())), [[]]);
@@ -217,7 +254,7 @@ export default function UploadProductPage() {
       if (selectedAttributes.length > 0) {
         payload.attributes = selectedAttributes.map(a => ({
           id: a.id, name: a.name, visible: true, variation: a.variation,
-          options: a.options.split(/[|,]/).map(s => s.trim()).filter(Boolean)
+          options: a.options.split(/[\r\n|,]+/).map(s => s.trim()).filter(Boolean)
         }));
       }
       if (images.length > 0) payload.images = images.map(img => ({ id: img.id, alt: img.alt }));
@@ -252,12 +289,28 @@ export default function UploadProductPage() {
     }
   };
 
-  const catTree = (() => {
-    const buildTree = (parentId = 0, depth = 0): any[] =>
-      categories.filter(c => c.parent === parentId).flatMap(c => [{ ...c, depth }, ...buildTree(c.id, depth + 1)]);
-    const tree = buildTree();
-    if (!catSearch.trim()) return tree;
-    return tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
+  const groupedCategories = (() => {
+    const access = parseCategoryAccess(profile?.pic_category ?? null);
+    const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
+    let allowedCats = categories;
+
+    if (isRestricted) {
+      if (!access.woo) return { parents: [], allowedCats: [], orphans: [] };
+      const allowedIds = access.woo.split(",").map(id => parseInt(id, 10));
+      allowedCats = categories.filter(c => allowedIds.includes(c.id));
+    }
+
+    if (catSearch.trim()) {
+      allowedCats = allowedCats.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
+    }
+
+    const parentIds = new Set(allowedCats.map(c => c.parent));
+    allowedCats.filter(c => c.parent === 0).forEach(c => parentIds.add(c.id));
+
+    const parents = categories.filter(c => c.parent === 0 && parentIds.has(c.id)).sort((a,b) => a.name.localeCompare(b.name));
+    const orphans = allowedCats.filter(c => c.parent !== 0 && !parents.find(p => p.id === c.parent));
+
+    return { parents, allowedCats, orphans };
   })();
 
   if (initialLoading) {
@@ -363,21 +416,80 @@ export default function UploadProductPage() {
                             </button>
                           )}
                         </div>
-                        <div className="overflow-y-auto p-1.5 flex-1">
-                          {catTree.length === 0 ? (
-                            <p className="text-xs text-slate-400 text-center py-4">Tidak ada hasil</p>
-                          ) : catTree.map(c => (
+                        <div className="overflow-y-auto p-1.5 flex-1 max-h-60">
+                            {groupedCategories.allowedCats.length === 0 ? (
+                              <p className="text-xs text-slate-400 text-center py-4">Kategori tidak ditemukan</p>
+                            ) : (() => {
+                                const renderItem = (c: any, isChild = false) => {
+                                  const isAllowed = groupedCategories.allowedCats.some(allowed => allowed.id === c.id);
+                                  if (!isAllowed && !isChild) {
+                                    return (
+                                      <div key={c.id} className="flex items-center gap-1.5 px-3 py-1">
+                                        <span className="text-xs font-semibold text-slate-400">{c.name}</span>
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div key={c.id} className="flex items-center gap-1 group">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelCatIds(prev => prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id])}
+                                        className={`flex-1 text-left px-3 py-1.5 text-sm rounded-lg flex items-center gap-2 transition-colors ${selCatIds.includes(c.id) ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
+                                      >
+                                        <input type="checkbox" checked={selCatIds.includes(c.id)} readOnly className="rounded text-blue-600 focus:ring-blue-500 shrink-0" />
+                                        <span className={`truncate ${isChild ? "text-xs text-slate-600" : "text-sm font-semibold"}`}>{c.name}</span>
+                                      </button>
+                                      {profile?.role === 'admin' && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); handleDeleteCategory(c.id, c.name); }}
+                                          className="p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all shrink-0"
+                                          title="Hapus Kategori"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                };
+
+                                return (
+                                  <div className="space-y-2">
+                                    {groupedCategories.parents.map(p => {
+                                      const children = groupedCategories.allowedCats.filter(c => c.parent === p.id).sort((a,b) => a.name.localeCompare(b.name));
+                                      return (
+                                        <div key={`group-${p.id}`} className="space-y-0.5">
+                                          {renderItem(p, false)}
+                                          {children.length > 0 && (
+                                            <div className="pl-6 border-l-2 border-slate-100 ml-3 space-y-0.5">
+                                              {children.map(c => renderItem(c, true))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+
+                                    {groupedCategories.orphans.length > 0 && (
+                                      <div className="space-y-0.5 pt-2 border-t border-slate-100 mt-2">
+                                        <span className="text-[11px] font-semibold text-slate-500 px-3 block mb-1">Kategori Lainnya</span>
+                                        {groupedCategories.orphans.map(c => renderItem(c, true))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                            })()}
+                          
+                          {/* Create New Category Button */}
+                          {catSearch.trim() && !categories.some(c => c.name.toLowerCase() === catSearch.toLowerCase().trim()) && (
                             <button
-                              key={c.id}
                               type="button"
-                              onClick={() => setSelCatIds(prev => prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id])}
-                              className={`w-full text-left px-3 py-2 text-sm rounded-lg flex items-center gap-2 transition-colors ${selCatIds.includes(c.id) ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
+                              onClick={() => handleCreateCategory(catSearch.trim())}
+                              className="w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg font-medium transition-colors border border-blue-100"
                             >
-                              <span className="text-slate-300 text-xs">{'—'.repeat(c.depth)}</span>
-                              <input type="checkbox" checked={selCatIds.includes(c.id)} readOnly className="rounded text-blue-600 focus:ring-blue-500 shrink-0" />
-                              <span className="truncate">{c.name}</span>
+                              <Plus className="w-4 h-4" />
+                              Tambah "{catSearch.trim()}"
                             </button>
-                          ))}
+                          )}
                         </div>
                       </div>
                     </>
@@ -673,7 +785,7 @@ export default function UploadProductPage() {
                               value={attr.options}
                               onChange={e => updateAttribute(idx, 'options', e.target.value)}
                               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-blue-500 outline-none resize-none"
-                              placeholder="Contoh: Merah | Biru | Hijau  atau  S, M, L, XL"
+                              placeholder="Contoh: Merah | Biru | Hijau, atau pisah dengan Enter"
                               rows={2}
                             />
                           </div>
@@ -707,7 +819,7 @@ export default function UploadProductPage() {
                             </div>
                             <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-2.5 border border-slate-200 rounded-lg bg-white">
                               {termsCache[attr.id].map(term => {
-                                const isChecked = attr.options.split(/[|,]/).map(s => s.trim()).includes(term.name);
+                                const isChecked = attr.options.split(/[\r\n|,]+/).map(s => s.trim()).includes(term.name);
                                 return (
                                   <label key={term.id} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors ${isChecked ? "bg-blue-50 border-blue-300 text-blue-700 font-medium" : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"}`}>
                                     <input
@@ -715,7 +827,7 @@ export default function UploadProductPage() {
                                       className="rounded text-blue-600 w-3 h-3"
                                       checked={isChecked}
                                       onChange={(e) => {
-                                        let current = attr.options.split(/[|,]/).map(s => s.trim()).filter(Boolean);
+                                        let current = attr.options.split(/[\r\n|,]+/).map(s => s.trim()).filter(Boolean);
                                         if (e.target.checked) { if (!current.includes(term.name)) current.push(term.name); }
                                         else { current = current.filter(c => c !== term.name); }
                                         updateAttribute(idx, 'options', current.join(' | '));

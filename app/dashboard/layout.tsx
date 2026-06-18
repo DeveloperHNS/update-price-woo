@@ -44,16 +44,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!store) return null;
 
   const isAdmin = profile?.role === "admin";
+  const isSuperAdmin = profile?.is_super_admin === true;
+
+  const isProductStaff = profile?.role === "product_staff";
 
   const navItems = [
     { name: "Manage Products", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Update Harga", href: "/dashboard/update-prices", icon: DollarSign },
+    ...(!isProductStaff ? [{ name: "Update Harga", href: "/dashboard/update-prices", icon: DollarSign }] : []),
     { name: "Upload Product", href: "/dashboard/upload", icon: UploadCloud },
     { name: "Sync Product", href: "/dashboard/sync", icon: ArrowLeftRight },
-    // Activity Logs — hanya admin yang bisa lihat
-    ...(isAdmin ? [{ name: "Activity Logs", href: "/dashboard/logs", icon: ClipboardList }] : []),
+    // Activity Logs — hanya super admin yang bisa lihat
+    ...(isSuperAdmin ? [{ name: "Activity Logs", href: "/dashboard/logs", icon: ClipboardList }] : []),
     // Admin-only: user management
-    ...(isAdmin ? [{ name: "Manajemen User", href: "/dashboard/admin/users", icon: Users }] : []),
+    ...(isSuperAdmin ? [{ name: "Manajemen User", href: "/dashboard/admin/users", icon: Users }] : []),
     { name: "Panduan Penggunaan", href: "/dashboard/guide", icon: HelpCircle },
   ];
 

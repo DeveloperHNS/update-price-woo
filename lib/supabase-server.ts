@@ -46,6 +46,7 @@ export const PIC_CATEGORY_KEYWORDS: Record<string, string[]> = {
   komponen: ["komponen", "component", "mobo", "casing", "processor", "psu", "vga", "fan", "cooler", "ram", "hdd", "ssd", "harddisk", "memory", "liquid", "thermal", "longdimm", "sodimm", "pcie"],
   laptop: ["laptop", "printer", "scanner", "tinta", "cartridge", "scanner"],
   aksesoris: ["aksesoris", "aksesori", "accessories", "accessory", "keyboard", "mouse", "headset", "speaker", "kabel", "bracket", "flashdisk", "micro sd", "charger", "baterai", "gamepad", "deskmat", "mousepad", "headphone", "earphone"],
+  dealer: ["dealer"], // Usually dealer isn't a strict product keyword in DB, but just in case
 };
 
 // Parse price string from Accurate (e.g. "5.000.000" or "5000000") to plain number string

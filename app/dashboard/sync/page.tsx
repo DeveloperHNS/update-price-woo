@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { getCurrentProfile, type UserProfile } from "@/lib/profile";
+import Papa from "papaparse";
+
+import { useEffect, useState, useCallback, useRef } from "react";
+import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 import { wooFetch } from "@/lib/api";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import {
   Search, RefreshCw, AlertCircle, CheckCircle2,
-  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap
+  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2, FileUp, EyeOff, Undo2
 } from "lucide-react";
 import { formatRp } from "@/lib/format";
 
-type Tab = "unmatched" | "needs_review" | "matched";
+type Tab = "unmatched" | "needs_review" | "matched" | "ignored";
 
 type WooSearchResult = {
   id: number;
@@ -39,17 +41,22 @@ const TAB_LABELS: Record<Tab, string> = {
   unmatched: "Belum Dimapping",
   needs_review: "Perlu Review",
   matched: "Sudah Dimapping",
+  ignored: "Diabaikan"
 };
 
 
 export default function SyncPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [products, setProducts] = useState<ProductWithStatus[]>([]);
-  const [counts, setCounts] = useState({ unmatched: 0, needs_review: 0, matched: 0 });
+  const [counts, setCounts] = useState({ unmatched: 0, needs_review: 0, matched: 0, ignored: 0 });
   const [tab, setTab] = useState<Tab>("unmatched");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
+
+  // CSV Automap state
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvUploading, setCsvUploading] = useState(false);
 
   // Matching modal
   const [matchTarget, setMatchTarget] = useState<ProductWithStatus | null>(null);
@@ -63,6 +70,10 @@ export default function SyncPage() {
 
   // Syncing price
   const [syncingPrice, setSyncingPrice] = useState<Set<string>>(new Set());
+
+  // Auto-mapping state
+  const [autoMapping, setAutoMapping] = useState(false);
+  const [autoMapProgress, setAutoMapProgress] = useState<{ total: number; current: number } | null>(null);
 
   const showToast = (msg: string, type: "success" | "error" | "loading") => {
     setToast({ msg, type });
@@ -185,6 +196,54 @@ export default function SyncPage() {
     }
   };
 
+  const handleIgnore = async (kode: string) => {
+    if (!profile) return;
+    try {
+      const res = await fetch("/api/sync/ignore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kode_accurate: kode, action: "ignore", triggered_by: profile.id })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showToast("Produk disembunyikan!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch(err: any) {
+      showToast("Gagal menyembunyikan: " + err.message, "error");
+    }
+  };
+
+  const handleRestore = async (kode: string) => {
+    if (!profile) return;
+    try {
+      const res = await fetch("/api/sync/ignore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kode_accurate: kode, action: "restore", triggered_by: profile.id })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showToast("Produk dikembalikan ke Belum Dimapping!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch(err: any) {
+      showToast("Gagal mengembalikan: " + err.message, "error");
+    }
+  };
+
+  const handleUnmatch = async (kode: string) => {
+    if (!profile || !confirm("Yakin ingin melepas mapping produk ini?")) return;
+    try {
+      const res = await fetch("/api/sync/unmatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kode_accurate: kode, triggered_by: profile.id })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showToast("Mapping dilepas!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch(err: any) {
+      showToast("Gagal melepas mapping: " + err.message, "error");
+    }
+  };
+
   const handleSyncPrice = async (kode: string) => {
     if (!profile || syncingPrice.has(kode)) return;
     setSyncingPrice((prev) => new Set(prev).add(kode));
@@ -209,6 +268,125 @@ export default function SyncPage() {
     }
   };
 
+  const handleAutoMap = async () => {
+    if (!profile) return;
+    const unmatched = products.filter(p => p._status === "unmatched" || !p._mapping?.woo_product_id);
+    if (unmatched.length === 0) {
+      showToast("Tidak ada produk unmatched", "error");
+      return;
+    }
+    if (!confirm(`Mulai Auto Map Cerdas untuk ${unmatched.length} produk? Proses ini memakan waktu beberapa menit.`)) return;
+
+    setAutoMapping(true);
+    setAutoMapProgress({ total: unmatched.length, current: 0 });
+
+    try {
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < unmatched.length; i += BATCH_SIZE) {
+        const batch = unmatched.slice(i, i + BATCH_SIZE).map(p => ({
+          kode: p["Kode Accurate"] || "",
+          nama: p["NAMA BARANG"] || ""
+        }));
+
+        const res = await fetch("/api/sync/automap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ products: batch, triggered_by: profile.id })
+        });
+        
+        if (!res.ok) {
+          console.error("Batch failed", await res.text());
+        }
+
+        setAutoMapProgress(prev => prev ? { ...prev, current: Math.min(prev.total, prev.current + BATCH_SIZE) } : null);
+      }
+      showToast("Auto Map selesai!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch (err: any) {
+      showToast("Auto Map error: " + err.message, "error");
+    } finally {
+      setAutoMapping(false);
+      setTimeout(() => setAutoMapProgress(null), 2000);
+    }
+  };
+
+  const handleUploadCsv = () => {
+    csvInputRef.current?.click();
+  };
+
+  const handleCsvFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+    
+    setCsvUploading(true);
+    showToast("Mem-parsing CSV di browser...", "loading");
+
+    // Note: Assuming PapaParse is available globally or imported
+    // @ts-ignore
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const data = results.data as any[];
+        const wooProducts = data.map((r: any) => ({
+           id: r.ID || r.id,
+           type: r.Tipe || r.Type || r.type,
+           sku: r.SKU || r.sku,
+           name: r.Nama || r.Name || r.name,
+           parent: r.Induk || r.Parent || r.parent
+        })).filter(r => r.id && r.name);
+
+        showToast(`Ditemukan ${wooProducts.length} produk di CSV. Memulai sinkronisasi...`, "loading");
+        
+        try {
+           const BATCH_SIZE = 1000;
+           let totalMatched = 0;
+           for (let i = 0; i < wooProducts.length; i += BATCH_SIZE) {
+              const batch = wooProducts.slice(i, i + BATCH_SIZE);
+              const res = await fetch("/api/sync/automap-csv", {
+                 method: "POST",
+                 headers: { "Content-Type": "application/json" },
+                 body: JSON.stringify({ wooProducts: batch, triggered_by: profile.id })
+              });
+              const resData = await res.json();
+              if (!res.ok) throw new Error(resData.error || "Gagal memproses batch");
+              totalMatched += resData.matched_count || 0;
+           }
+           showToast(`Berhasil auto-map ${totalMatched} produk dari CSV!`, "success");
+           loadProducts(tab, profile.pic_category);
+        } catch(err: any) {
+           showToast("Error CSV: " + err.message, "error");
+        } finally {
+           setCsvUploading(false);
+           if (csvInputRef.current) csvInputRef.current.value = "";
+        }
+      },
+      error: (err: any) => {
+        showToast("Gagal membaca CSV: " + err.message, "error");
+        setCsvUploading(false);
+      }
+    });
+  };
+
+  const handleResetReview = async () => {
+    if (!profile) return;
+    if (!confirm("Yakin ingin mereset semua produk yang berstatus 'Perlu Review'? Produk akan kembali ke status 'Belum Dimapping'.")) return;
+    showToast("Mereset Perlu Review...", "loading");
+    try {
+      const res = await fetch("/api/sync/reset-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ triggered_by: profile.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast("Berhasil mereset!", "success");
+      loadProducts(tab, profile.pic_category);
+    } catch (err: any) {
+      showToast("Gagal mereset: " + err.message, "error");
+    }
+  };
+
   const filtered = products.filter((p) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -220,6 +398,7 @@ export default function SyncPage() {
   });
 
   const isAdmin = profile?.role === "admin";
+  const canViewCP = profile?.role !== "product_staff" || (profile?.pic_category && profile.pic_category.split(",").includes("dealer"));
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -228,22 +407,75 @@ export default function SyncPage() {
         <div>
           <h2 className="text-base font-bold text-slate-800">Sync Product</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            {isAdmin ? "Semua kategori" : `Kategori: ${profile?.pic_category ?? "—"}`}
+            {isAdmin ? "Semua kategori" : `Kategori: ${parseCategoryAccess(profile?.pic_category ?? null).erp ?? "—"}`}
           </p>
         </div>
-        <button
-          onClick={() => loadProducts(tab, profile?.pic_category ?? null)}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {tab === "needs_review" && (
+            <button
+              onClick={handleResetReview}
+              disabled={loading || counts.needs_review === 0}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Reset Perlu Review</span>
+            </button>
+          )}
+          {tab === "unmatched" && (
+            <>
+              <input type="file" accept=".csv" className="hidden" ref={csvInputRef} onChange={handleCsvFileChange} />
+              <button
+                onClick={handleUploadCsv}
+                disabled={loading || autoMapping || csvUploading}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <FileUp className={`w-4 h-4 ${csvUploading ? "animate-pulse" : ""}`} />
+                <span className="hidden lg:inline">{csvUploading ? "Memproses CSV..." : "Upload CSV Woo"}</span>
+              </button>
+              <button
+                onClick={handleAutoMap}
+                disabled={loading || autoMapping || csvUploading}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Zap className={`w-4 h-4 ${autoMapping ? "animate-pulse text-amber-300" : ""}`} />
+                <span className="hidden sm:inline">{autoMapping ? "Memproses..." : "Auto Map Cerdas"}</span>
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => loadProducts(tab, profile?.pic_category ?? null)}
+            disabled={loading || autoMapping}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        </div>
       </div>
+
+      {/* Auto Map Progress Bar */}
+      {autoMapProgress && (
+        <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 shrink-0">
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-sm font-medium text-blue-800">
+              Proses Auto Map... ({autoMapProgress.current} / {autoMapProgress.total})
+            </span>
+            <span className="text-xs font-bold text-blue-600">
+              {Math.round((autoMapProgress.current / autoMapProgress.total) * 100)}%
+            </span>
+          </div>
+          <div className="w-full bg-blue-200 rounded-full h-2">
+            <div
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${Math.round((autoMapProgress.current / autoMapProgress.total) * 100)}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 shrink-0 px-4">
-        {(["unmatched", "needs_review", "matched"] as Tab[]).map((t) => (
+        {(["unmatched", "needs_review", "matched", "ignored"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => handleTabChange(t)}
@@ -255,7 +487,8 @@ export default function SyncPage() {
             {TAB_LABELS[t]}
             <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${t === "unmatched" ? "bg-red-100 text-red-700" :
                 t === "needs_review" ? "bg-amber-100 text-amber-700" :
-                  "bg-green-100 text-green-700"
+                  t === "ignored" ? "bg-slate-200 text-slate-700" :
+                    "bg-green-100 text-green-700"
               }`}>
               {counts[t]}
             </span>
@@ -332,7 +565,7 @@ export default function SyncPage() {
                           Dealer: <span className="font-semibold">{formatRp(p["PRICE"])}</span>
                         </span>
                       )}
-                      {p["CP"] && (
+                      {canViewCP && p["CP"] && (
                         <span className="text-xs text-slate-400">
                           Modal: {formatRp(p["CP"])}
                         </span>
@@ -344,9 +577,9 @@ export default function SyncPage() {
 
                     {/* Mapping info for matched/needs_review */}
                     {p._mapping && (
-                      <div className="flex items-center gap-1.5 mt-1">
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         <ArrowRight className="w-3 h-3 text-slate-300 shrink-0" />
-                        <span className="text-xs text-slate-500 truncate">
+                        <span className="text-xs text-slate-500 truncate max-w-xs">
                           {p._mapping.woo_name ?? `WC #${p._mapping.woo_product_id}`}
                           {p._mapping.woo_sku_full && (
                             <span className="text-slate-400 ml-1">({p._mapping.woo_sku_full})</span>
@@ -357,14 +590,29 @@ export default function SyncPage() {
                             Perlu Konfirmasi
                           </span>
                         )}
+                        {/* Tampilkan Alasan */}
+                        {p._mapping.match_method && p._status === "needs_review" && (
+                          <span className="text-[10px] text-slate-400 italic">
+                            ({p._mapping.match_method.includes("fuzzy")
+                               ? `Kemiripan: ${p._mapping.confidence_score ?? 0}%` 
+                               : "Auto Match"})
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
 
                   {/* Right: action */}
-                  <div className="shrink-0 flex flex-col gap-1.5">
+                  <div className="shrink-0 flex items-center gap-1.5">
                     {tab === "matched" ? (
                       <>
+                        <button
+                          onClick={() => handleUnmatch(kode)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-100 hover:bg-rose-200 rounded-lg transition-colors"
+                        >
+                          <Link2Off className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Lepas</span>
+                        </button>
                         <button
                           onClick={() => handleSyncPrice(kode)}
                           disabled={isSyncing || !p["SP"]}
@@ -375,27 +623,39 @@ export default function SyncPage() {
                             ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                             : <Zap className="w-3.5 h-3.5" />
                           }
-                          Sync Harga
-                        </button>
-                        <button
-                          onClick={() => { setMatchTarget(p); setWooSearch(""); setSelectedWoo(null); setVariations([]); }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                        >
-                          <Link2 className="w-3.5 h-3.5" />
-                          Ganti
+                          <span className="hidden sm:inline">Sync</span>
                         </button>
                       </>
-                    ) : (
+                    ) : tab === "ignored" ? (
                       <button
-                        onClick={() => { setMatchTarget(p); setWooSearch(""); setSelectedWoo(null); setVariations([]); }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${tab === "needs_review"
-                            ? "text-amber-700 bg-amber-100 hover:bg-amber-200"
-                            : "text-blue-700 bg-blue-100 hover:bg-blue-200"
-                          }`}
+                        onClick={() => handleRestore(kode)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
                       >
-                        <Link2 className="w-3.5 h-3.5" />
-                        {tab === "needs_review" ? "Konfirmasi" : "Match"}
+                        <Undo2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Kembalikan</span>
                       </button>
+                    ) : (
+                      <>
+                        {tab === "unmatched" && (
+                          <button
+                            onClick={() => handleIgnore(kode)}
+                            title="Abaikan produk ini"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                          >
+                            <EyeOff className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setMatchTarget(p); setWooSearch(""); setSelectedWoo(null); setVariations([]); }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${tab === "needs_review"
+                              ? "text-amber-700 bg-amber-100 hover:bg-amber-200"
+                              : "text-blue-700 bg-blue-100 hover:bg-blue-200"
+                            }`}
+                        >
+                          <Link2 className="w-3.5 h-3.5" />
+                          {tab === "needs_review" ? "Konfirmasi" : "Match"}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -468,7 +728,7 @@ export default function SyncPage() {
                       <p className="text-sm font-bold text-emerald-700">{formatRp(matchTarget["PRICE"])}</p>
                     </div>
                   )}
-                  {matchTarget["CP"] && (
+                  {canViewCP && matchTarget["CP"] && (
                     <div>
                       <p className="text-[10px] text-slate-400">Modal (CP)</p>
                       <p className="text-xs text-slate-600">{formatRp(matchTarget["CP"])}</p>

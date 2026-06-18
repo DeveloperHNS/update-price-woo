@@ -4,15 +4,18 @@ export interface WooProduct {
   sku: string;
   type: 'simple' | 'variable' | 'grouped' | 'external' | string;
   regular_price: string;
+  sale_price?: string;
   stock_status?: 'instock' | 'outofstock' | string;
   status?: 'publish' | 'private' | 'draft' | string;
   parent?: number;
+  attributes?: Array<{ id: number; name: string; position?: number; visible?: boolean; variation?: boolean; options: string[] }>;
 }
 
 export interface WooVariation {
   id: number;
   sku: string;
   regular_price: string;
+  sale_price?: string;
   stock_status?: 'instock' | 'outofstock' | string;
   attributes?: Array<{ id?: number; name: string; option: string }>;
 }

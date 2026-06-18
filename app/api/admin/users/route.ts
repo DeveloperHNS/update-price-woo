@@ -1,5 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+
+async function isSuperAdminServer() {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+      },
+    }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return false;
+  const superAdmins = (process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase());
+  return superAdmins.includes(user.email.toLowerCase());
+}
 
 // Server-side admin client using service role key
 function adminClient() {
@@ -11,6 +32,9 @@ function adminClient() {
 // GET — list all users with profile data
 export async function GET() {
   try {
+    const isSuperAdmin = await isSuperAdminServer();
+    if (!isSuperAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const supabase = adminClient();
 
     // Fetch all auth users
@@ -51,6 +75,9 @@ export async function DELETE(req: NextRequest) {
     const { userId } = await req.json() as { userId: string };
     if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });
 
+    const isSuperAdmin = await isSuperAdminServer();
+    if (!isSuperAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const supabase = adminClient();
 
     // Hapus profile dulu (jika tidak ada cascade)
@@ -73,10 +100,13 @@ export async function PATCH(req: NextRequest) {
       userId: string;
       status?: "pending" | "active" | "rejected";
       role?: "admin" | "pic" | "product_staff";
-      pic_category?: "komponen" | "aksesoris" | "laptop" | null;
+      pic_category?: string | null;
     };
 
     if (!userId) return NextResponse.json({ error: "userId wajib diisi" }, { status: 400 });
+
+    const isSuperAdmin = await isSuperAdminServer();
+    if (!isSuperAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const supabase = adminClient();
     const patch: Record<string, string | null> = {};
@@ -93,7 +123,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (err: unknown) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : JSON.stringify(err) }, { status: 500 });
   }
 }

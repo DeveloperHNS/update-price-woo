@@ -5,6 +5,7 @@ const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const ALLOWED_ENDPOINT_PATTERNS = [
   /^products$/,
   /^products\/categories$/,
+  /^products\/categories\/\d+$/,
   /^products\/attributes$/,
   /^products\/attributes\/\d+\/terms$/,
   /^products\/\d+$/,
