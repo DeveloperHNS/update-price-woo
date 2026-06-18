@@ -4,14 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal } from "lucide-react";
+import { formatRp } from "@/lib/format";
 
-function formatRp(raw: string | null | undefined) {
-  if (!raw) return "—";
-  const cleaned = raw.replace(/[Rp\s.]/gi, "").replace(",", ".");
-  const num = parseFloat(cleaned);
-  if (isNaN(num)) return raw;
-  return "Rp " + num.toLocaleString("id-ID");
-}
 
 function MultiSelectDropdown({
   options,
