@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib/api";
 import { formatRp } from "@/lib/format";
-import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2, ListTree } from "lucide-react";
+import { logActivity } from "@/lib/activity-log";
+import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2, ListTree, GitBranch } from "lucide-react";
 import VarEditModal from "./components/VarEditModal";
+import ConvertToVariableModal from "./components/ConvertToVariableModal";
 import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 
 type WooCategory = {
@@ -51,6 +53,7 @@ export default function ManageProducts() {
   const [deleting, setDeleting] = useState<Set<number>>(new Set());
   const [productToDelete, setProductToDelete] = useState<WooProduct | null>(null);
   const [varEditModalProduct, setVarEditModalProduct] = useState<WooProduct | null>(null);
+  const [convertToVarProduct, setConvertToVarProduct] = useState<WooProduct | null>(null);
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
@@ -417,6 +420,10 @@ export default function ManageProducts() {
     }
   };
 
+  const handleConverted = (productId: number) => {
+    setProducts(prev => prev.map(p => p.id === productId ? { ...p, type: "variable" } : p));
+  };
+
   const firstEntry = products.length > 0 ? (page - 1) * PER_PAGE + 1 : 0;
   const lastEntry = (page - 1) * PER_PAGE + products.length;
 
@@ -604,6 +611,7 @@ export default function ManageProducts() {
           mappedPrices,
           isAdmin: profile?.role === "admin",
           onOpenVarModal: () => setVarEditModalProduct(p),
+          onConvertToVariable: () => setConvertToVarProduct(p),
         });
 
         return (
@@ -778,9 +786,9 @@ export default function ManageProducts() {
 
       {/* Variation Edit Modal */}
       {varEditModalProduct && (
-        <VarEditModal 
-          product={varEditModalProduct} 
-          onClose={() => setVarEditModalProduct(null)} 
+        <VarEditModal
+          product={varEditModalProduct}
+          onClose={() => setVarEditModalProduct(null)}
           onSaved={() => {
             // refresh product data or variations if needed
             toggleExpand(varEditModalProduct.id);
@@ -793,7 +801,15 @@ export default function ManageProducts() {
               });
               setTimeout(() => toggleExpand(varEditModalProduct.id), 100);
             }
-          }} 
+          }}
+        />
+      )}
+
+      {convertToVarProduct && (
+        <ConvertToVariableModal
+          product={convertToVarProduct}
+          onClose={() => setConvertToVarProduct(null)}
+          onConverted={handleConverted}
         />
       )}
 
@@ -821,7 +837,7 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices, isAdmin, onOpenVarModal }: {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices, isAdmin, onOpenVarModal, onConvertToVariable }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -840,6 +856,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   mappedPrices: Record<number, { cp: string | null; price: string | null; sp: string | null }>;
   isAdmin: boolean;
   onOpenVarModal: () => void;
+  onConvertToVariable: () => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -973,6 +990,17 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                 Edit Variasi
               </button>
             )}
+            {/* Convert to Variable button */}
+            {!isVar && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onConvertToVariable(); }}
+                title="Konversi ke Variable"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+              >
+                <GitBranch className="w-3 h-3" />
+                Ke Variable
+              </button>
+            )}
           </div>
         </td>
       </tr>
@@ -1064,7 +1092,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
 }
 
 // ── ProductCard — mobile card view ──────────────────────────────────────────
-function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, isAdmin, onOpenVarModal }: {
+function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, isAdmin, onOpenVarModal, onConvertToVariable }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -1082,6 +1110,7 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
   showToast: (msg: string, type: "success" | "error" | "loading") => void;
   isAdmin: boolean;
   onOpenVarModal: () => void;
+  onConvertToVariable: () => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -1209,6 +1238,19 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
                 <ListTree className="w-3.5 h-3.5" />
               </button>
               <span className="text-[9px] text-slate-400 font-medium">Variasi</span>
+            </div>
+          )}
+          {/* Convert to Variable toggle */}
+          {!isVar && (
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); onConvertToVariable(); }}
+                title="Konversi ke Variable"
+                className="inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+              >
+                <GitBranch className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[9px] text-slate-400 font-medium">Ke Var</span>
             </div>
           )}
         </div>
