@@ -379,13 +379,13 @@ export default function UpdatePricesPage() {
           <>
             {/* ── Desktop table (sm+) ── */}
             <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-sm text-left min-w-[780px]">
+              <table className="w-full text-sm text-left min-w-[780px] table-fixed">
                 <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
                   <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                     <th className="px-4 py-3">Produk</th>
-                    <th className="px-4 py-3 w-36">Harga SRP</th>
-                    <th className="px-4 py-3 w-44">Harga Modal (CP)</th>
-                    <th className="px-4 py-3 w-44">Harga Dealer</th>
+                    <th className="px-4 py-3 w-[120px] lg:w-36">Harga SRP</th>
+                    <th className="px-4 py-3 w-[160px] lg:w-44">Harga Modal (CP)</th>
+                    <th className="px-4 py-3 w-[160px] lg:w-44">Harga Dealer</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">

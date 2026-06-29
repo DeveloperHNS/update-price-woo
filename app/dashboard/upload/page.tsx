@@ -8,8 +8,10 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
-import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, Camera, RotateCcw, GripVertical } from "lucide-react";
+import { Save, AlertCircle, RefreshCw, CheckCircle2, ChevronDown, Plus, Trash2, Bold, Italic, List, ListOrdered, ImagePlus, X as XIcon, Camera, RotateCcw, GripVertical, Code } from "lucide-react";
 import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
+
+const tiptapExtensions = [StarterKit, Link.configure({ openOnClick: false })];
 
 export default function UploadProductPage() {
   const [loading, setLoading] = useState(false);
@@ -35,10 +37,12 @@ export default function UploadProductPage() {
   const [selCatIds, setSelCatIds] = useState<number[]>([]);
   const [catSearch, setCatSearch] = useState("");
   const [showCatDD, setShowCatDD] = useState(false);
+  const [isHtmlMode, setIsHtmlMode] = useState(false);
+  const [htmlContent, setHtmlContent] = useState("");
 
   // Tiptap Editor for Description
   const editor = useEditor({
-    extensions: [StarterKit, Link.configure({ openOnClick: false })],
+    extensions: tiptapExtensions,
     content: '',
     immediatelyRender: false,
     editorProps: {
@@ -207,17 +211,36 @@ export default function UploadProductPage() {
       showToast("No attributes marked for variations with options", "error");
       return;
     }
-    const parsedAttrs = varAttrs.map(a => ({
-      id: a.id,
-      name: a.name,
-      options: a.options.split(/[\r\n|,]+/).map(s => s.trim()).filter(Boolean)
-    }));
+    const parsedAttrs = varAttrs.map(a => {
+      const names = a.options.split(/[\r\n|,]+/).map(s => s.trim()).filter(Boolean);
+      // For global attributes (id > 0), try to find the slug from termsCache
+      const optionsWithSlug = names.map(name => {
+        if (a.id > 0 && termsCache[a.id]) {
+          const term = termsCache[a.id].find((t: any) => t.name === name);
+          if (term && term.slug) return { name, slug: term.slug };
+        }
+        return { name, slug: name };
+      });
+      return {
+        id: a.id,
+        name: a.name,
+        options: optionsWithSlug
+      };
+    });
+    
     const cartesian = (arrays: any[][]): any[][] =>
       arrays.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())), [[]]);
+      
     const combinations = cartesian(parsedAttrs.map(a => a.options));
+    
     const newVars = combinations.map(comb => {
       const combArray = Array.isArray(comb) ? comb : [comb];
-      const attrsForVar = parsedAttrs.map((a, i) => ({ id: a.id, name: a.name, option: combArray[i] }));
+      const attrsForVar = parsedAttrs.map((a, i) => ({ 
+        id: a.id, 
+        name: a.name, 
+        option: combArray[i].name,
+        slug: combArray[i].slug 
+      }));
       const key = attrsForVar.map(a => a.option).join('-');
       return {
         key,
@@ -236,7 +259,8 @@ export default function UploadProductPage() {
     setLoading(true);
     setUploadStep(null);
     try {
-      const payload: any = { name, type, sku, description: editor?.getHTML() || "" };
+      const descriptionToSave = isHtmlMode ? htmlContent : (editor?.getHTML() || "");
+      const payload: any = { name, type, sku, description: descriptionToSave };
       if (type === 'simple') {
         if (regularPrice) payload.regular_price = regularPrice;
         if (salePrice) payload.sale_price = salePrice;
@@ -270,7 +294,12 @@ export default function UploadProductPage() {
         await wooFetch(`products/${parentId}/variations/batch`, "POST", {
           create: variations.map(v => ({
             regular_price: v.regular_price, sale_price: v.sale_price, sku: v.sku,
-            attributes: v.attributes.map(a => ({ id: a.id, name: a.name, option: a.option })),
+            attributes: v.attributes.map(a => ({ 
+              id: a.id, 
+              name: a.name, 
+              // Gunakan slug untuk atribut global (id > 0), jika custom (id === 0) gunakan string opsi
+              option: a.id > 0 && a.slug ? a.slug : a.option 
+            })),
             ...(v.imageId ? { image: { id: v.imageId } } : {})
           }))
         });
@@ -529,16 +558,52 @@ export default function UploadProductPage() {
 
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Deskripsi Produk</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-slate-700">Deskripsi Produk</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isHtmlMode) {
+                      editor?.commands.setContent(htmlContent);
+                      setIsHtmlMode(false);
+                    } else {
+                      setHtmlContent(editor?.getHTML() || "");
+                      setIsHtmlMode(true);
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors border ${
+                    isHtmlMode 
+                      ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Code className="w-3.5 h-3.5" /> HTML Mode
+                </button>
+              </div>
+
               <div className="rounded-xl overflow-hidden border border-slate-300 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-400 transition-all">
-                <div className="flex items-center gap-1 bg-slate-100 border-b border-slate-200 px-2 py-1.5">
-                  <button type="button" onClick={() => editor?.chain().focus().toggleBold().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('bold') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><Bold className="w-4 h-4" /></button>
-                  <button type="button" onClick={() => editor?.chain().focus().toggleItalic().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('italic') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><Italic className="w-4 h-4" /></button>
-                  <div className="w-px h-4 bg-slate-300 mx-1" />
-                  <button type="button" onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('bulletList') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><List className="w-4 h-4" /></button>
-                  <button type="button" onClick={() => editor?.chain().focus().toggleOrderedList().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('orderedList') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><ListOrdered className="w-4 h-4" /></button>
-                </div>
-                <EditorContent editor={editor} />
+                {isHtmlMode ? (
+                  <div className="bg-slate-900 text-slate-50 relative p-1">
+                    <textarea
+                      value={htmlContent}
+                      onChange={(e) => setHtmlContent(e.target.value)}
+                      className="w-full h-full min-h-[200px] bg-transparent border-none text-sm font-mono focus:ring-0 p-4 resize-y outline-none"
+                      placeholder="<p>Paste raw HTML here...</p>"
+                      spellCheck={false}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1 bg-slate-100 border-b border-slate-200 px-2 py-1.5">
+                      <button type="button" onClick={() => editor?.chain().focus().toggleBold().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('bold') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><Bold className="w-4 h-4" /></button>
+                      <button type="button" onClick={() => editor?.chain().focus().toggleItalic().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('italic') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><Italic className="w-4 h-4" /></button>
+                      <div className="w-px h-4 bg-slate-300 mx-1" />
+                      <button type="button" onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('bulletList') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><List className="w-4 h-4" /></button>
+                      <button type="button" onClick={() => editor?.chain().focus().toggleOrderedList().run()} className={`p-1.5 rounded-lg hover:bg-slate-200 transition-colors ${editor?.isActive('orderedList') ? 'bg-slate-200 text-blue-600' : 'text-slate-600'}`}><ListOrdered className="w-4 h-4" /></button>
+                    </div>
+                    <EditorContent editor={editor} />
+                  </>
+                )}
               </div>
             </div>
           </div>

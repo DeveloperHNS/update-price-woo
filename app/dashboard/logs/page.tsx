@@ -20,13 +20,13 @@ type ActivityLog = {
 };
 
 const ACTION_LABELS: Record<string, { label: string; color: string }> = {
-  update_price:   { label: "Update Harga",  color: "bg-blue-100 text-blue-800" },
-  update_sku:     { label: "Update SKU",    color: "bg-indigo-100 text-indigo-800" },
-  update_name:    { label: "Update Nama",   color: "bg-violet-100 text-violet-800" },
-  toggle_stock:   { label: "Toggle Stok",   color: "bg-amber-100 text-amber-800" },
-  toggle_status:  { label: "Toggle Status", color: "bg-sky-100 text-sky-800" },
+  update_price: { label: "Update Harga", color: "bg-blue-100 text-blue-800" },
+  update_sku: { label: "Update SKU", color: "bg-indigo-100 text-indigo-800" },
+  update_name: { label: "Update Nama", color: "bg-violet-100 text-violet-800" },
+  toggle_stock: { label: "Toggle Stok", color: "bg-amber-100 text-amber-800" },
+  toggle_status: { label: "Toggle Status", color: "bg-sky-100 text-sky-800" },
   upload_product: { label: "Upload Produk", color: "bg-green-100 text-green-800" },
-  delete_product: { label: "Hapus Produk",  color: "bg-red-100 text-red-800" },
+  delete_product: { label: "Hapus Produk", color: "bg-red-100 text-red-800" },
 };
 
 function ActionBadge({ action }: { action: string }) {
@@ -236,15 +236,15 @@ export default function LogsPage() {
           <>
             {/* ── Desktop table (sm+) ── */}
             <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-sm text-left min-w-[720px]">
+              <table className="w-full text-sm text-left" style={{ minWidth: "900px" }}>
                 <thead className="text-[11px] text-slate-500 uppercase tracking-wide bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3 font-semibold">Waktu</th>
-                    <th className="px-4 py-3 font-semibold">User</th>
-                    <th className="px-4 py-3 font-semibold">Aksi</th>
+                    <th className="px-4 py-3 font-semibold whitespace-nowrap w-[160px]">Waktu</th>
+                    <th className="px-4 py-3 font-semibold w-[180px]">User</th>
+                    <th className="px-4 py-3 font-semibold w-[130px]">Aksi</th>
                     <th className="px-4 py-3 font-semibold">Produk</th>
-                    <th className="px-4 py-3 font-semibold">Field</th>
-                    <th className="px-4 py-3 font-semibold">Perubahan</th>
+                    <th className="px-4 py-3 font-semibold w-[90px]">Field</th>
+                    <th className="px-4 py-3 font-semibold w-[260px]">Perubahan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -253,14 +253,16 @@ export default function LogsPage() {
                       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
                         {formatDate(log.created_at)}
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-700 max-w-[140px] truncate" title={log.user_email ?? "-"}>
-                        {log.user_email ?? <span className="text-slate-300 italic">—</span>}
+                      <td className="px-4 py-3 text-xs text-slate-700" title={log.user_email ?? "-"}>
+                        <span className="block truncate max-w-[160px]">
+                          {log.user_email ?? <span className="text-slate-300 italic">—</span>}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <ActionBadge action={log.action} />
                       </td>
-                      <td className="px-4 py-3 max-w-[180px]">
-                        <div className="text-xs font-medium text-slate-800 truncate" title={log.product_name ?? ""}>
+                      <td className="px-4 py-3">
+                        <div className="text-xs font-medium text-slate-800" title={log.product_name ?? ""}>
                           {log.product_name ?? <span className="text-slate-300 italic">—</span>}
                         </div>
                         {log.product_id && (
@@ -273,11 +275,11 @@ export default function LogsPage() {
                       <td className="px-4 py-3">
                         {log.old_value !== null || log.new_value !== null ? (
                           <div className="flex items-center gap-1.5 text-xs">
-                            <span className="px-1.5 py-0.5 bg-red-50 text-red-700 rounded font-mono max-w-[80px] truncate" title={log.old_value ?? ""}>
+                            <span className="px-1.5 py-0.5 bg-red-50 text-red-700 rounded font-mono max-w-[110px] truncate" title={log.old_value ?? ""}>
                               {log.old_value || <span className="italic opacity-60">kosong</span>}
                             </span>
                             <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded font-mono max-w-[80px] truncate" title={log.new_value ?? ""}>
+                            <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded font-mono max-w-[110px] truncate" title={log.new_value ?? ""}>
                               {log.new_value || <span className="italic opacity-60">kosong</span>}
                             </span>
                           </div>
@@ -332,9 +334,8 @@ export default function LogsPage() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-5 sm:translate-x-0 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 bg-white ${
-          toast.type === "success" ? "border-green-200 text-green-800" : "border-red-200 text-red-700"
-        }`}>
+        <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-5 sm:translate-x-0 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 bg-white ${toast.type === "success" ? "border-green-200 text-green-800" : "border-red-200 text-red-700"
+          }`}>
           {toast.type === "success"
             ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
             : <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}

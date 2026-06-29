@@ -5,8 +5,7 @@ import { consumePendingProduct, wooFetch, WooProduct, WooVariation } from "@/lib
 import { formatRp } from "@/lib/format";
 import { logActivity } from "@/lib/activity-log";
 import { Search, ChevronDown, RefreshCw, AlertCircle, CheckCircle2, ChevronRight, Edit2, X, Check, Globe, Lock, SlidersHorizontal, ArrowUp, ArrowDown, ChevronsUpDown, Trash2, ListTree, GitBranch } from "lucide-react";
-import VarEditModal from "./components/VarEditModal";
-import ConvertToVariableModal from "./components/ConvertToVariableModal";
+import Link from "next/link";
 import { getCurrentProfile, parseCategoryAccess, type UserProfile } from "@/lib/profile";
 
 type WooCategory = {
@@ -52,11 +51,9 @@ export default function ManageProducts() {
   const [updatingStatus, setUpdatingStatus] = useState<Set<number>>(new Set());
   const [deleting, setDeleting] = useState<Set<number>>(new Set());
   const [productToDelete, setProductToDelete] = useState<WooProduct | null>(null);
-  const [varEditModalProduct, setVarEditModalProduct] = useState<WooProduct | null>(null);
-  const [convertToVarProduct, setConvertToVarProduct] = useState<WooProduct | null>(null);
 
   // Toast
-  const [toast, setToast] = useState<{msg: string, type: "success"|"error"|"loading"} | null>(null);
+  const [toast, setToast] = useState<{ msg: string, type: "success" | "error" | "loading" } | null>(null);
   // Mobile filter panel open/close
   const [filterOpen, setFilterOpen] = useState(false);
 
@@ -170,10 +167,10 @@ export default function ManageProducts() {
           order: "desc",
           _fields: "id,name,sku,type,regular_price,sale_price,parent,stock_status,status",
         };
-        
+
         const access = parseCategoryAccess(profile?.pic_category ?? null);
         const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
-        
+
         if (isRestricted && !access.woo) {
           setProducts([]);
           setHasNextPage(false);
@@ -183,23 +180,95 @@ export default function ManageProducts() {
 
         if (selCatId !== null) {
           params.category = selCatId;
-        } else if (isRestricted) {
+        } else if (isRestricted && !debouncedSearch) {
           params.category = access.woo as string;
         }
 
         let items: WooProduct[] = [];
         if (debouncedSearch) {
-          const [searchRes, skuRes] = await Promise.all([
-            wooFetch("products", "GET", undefined, { ...params, search: debouncedSearch }),
-            wooFetch("products", "GET", undefined, { ...params, sku: debouncedSearch })
-          ]);
-          
-          const combined = [...(searchRes as WooProduct[]), ...(skuRes as WooProduct[])];
+          let promises: Promise<any>[] = [];
+          const query = debouncedSearch.trim();
+
+          if (/^#\d+$/.test(query)) {
+            const idToSearch = query.substring(1);
+            promises.push(
+              wooFetch(`products/${idToSearch}`, "GET").then(p => p ? [p] : []).catch(() => [])
+            );
+          } else {
+            promises = [
+              wooFetch("products", "GET", undefined, { ...params, search: query }),
+              wooFetch("products", "GET", undefined, { ...params, sku: query })
+            ];
+
+            if (/^\d+$/.test(query)) {
+              promises.push(wooFetch(`products/${query}`, "GET").then(p => p ? [p] : []).catch(() => []));
+            }
+
+            // Fallback: cari dengan membuang kata-kata atribut (ukuran/angka)
+            const words = query.split(/\s+/).filter(w => w.length > 0);
+            if (words.length > 1) {
+              const attrRegex = /^(\d+|gb|tb|mb|hz|mhz|ddr\d|gen\d.*|ram|rom|ssd|hdd|nvme|sata|inch|black|white|hitam|putih)$/i;
+              const nonAttrWords = words.filter(w => !attrRegex.test(w));
+              if (nonAttrWords.length > 0 && nonAttrWords.length < words.length) {
+                promises.push(wooFetch("products", "GET", undefined, { ...params, search: nonAttrWords.join(" ") }).catch(() => []));
+              }
+
+              // Fallback: cari dengan kata terpanjang saja (biasanya merek/seri spesifik)
+              const longestWord = [...words].sort((a,b) => b.length - a.length)[0];
+              if (longestWord && longestWord.length > 3) {
+                promises.push(wooFetch("products", "GET", undefined, { ...params, search: longestWord }).catch(() => []));
+              }
+            }
+          }
+
+          const results = await Promise.all(promises);
+
+          let combined = results.flat() as WooProduct[];
           const uniqueMap = new Map<number, WooProduct>();
           combined.forEach(p => {
-            if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
+            if (p && p.id && !uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
           });
           items = Array.from(uniqueMap.values());
+
+          // Fuzzy Client-Side Filter & Relevance Sort
+          if (!/^#\d+$/.test(query) && query.length > 0) {
+            const cleanQuery = query.toLowerCase().replace(/(\d+)\s*(gb|tb|mb|mhz|hz|inch)/g, "$1$2");
+            const filterWords = cleanQuery.split(/\s+/).filter(w => w.length > 0);
+
+            const scoredItems = items.map(p => {
+              const nameLower = p.name.toLowerCase().replace(/(\d+)\s*(gb|tb|mb|mhz|hz|inch)/g, "$1$2");
+              const skuLower = (p.sku || "").toLowerCase();
+              const attrLower = (p.attributes?.flatMap(a => [a.name, ...a.options]) || []).join(" ").toLowerCase().replace(/(\d+)\s*(gb|tb|mb|mhz|hz|inch)/g, "$1$2");
+
+              let score = 0;
+              let allMatch = true;
+
+              for (const w of filterWords) {
+                let matched = false;
+                if (nameLower.includes(w)) {
+                  score += 10;
+                  matched = true;
+                } else if (skuLower.includes(w)) {
+                  score += 5;
+                  matched = true;
+                } else if (attrLower.includes(w)) {
+                  score += 1;
+                  matched = true;
+                }
+
+                if (!matched) {
+                  allMatch = false;
+                }
+              }
+
+              return { product: p, score, allMatch };
+            });
+
+            items = scoredItems
+              .filter(item => item.allMatch)
+              .sort((a, b) => b.score - a.score)
+              .map(item => item.product);
+          }
         } else {
           items = await wooFetch("products", "GET", undefined, params) as WooProduct[];
         }
@@ -227,7 +296,7 @@ export default function ManageProducts() {
     loadProductsPage();
   }, [page, debouncedSearch, selCatId, profile?.pic_category, profile?.role]);
 
-  const showToast = (msg: string, type: "success"|"error"|"loading") => {
+  const showToast = (msg: string, type: "success" | "error" | "loading") => {
     setToast({ msg, type });
     if (type !== "loading") setTimeout(() => setToast(null), 3500);
   };
@@ -265,7 +334,7 @@ export default function ManageProducts() {
     const access = parseCategoryAccess(profile?.pic_category ?? null);
     const isRestricted = profile && (profile.role === 'pic' || profile.role === 'product_staff') && access.woo !== "ALL";
     let allowedCats = categories;
-    
+
     if (isRestricted) {
       if (!access.woo) return [];
       const allowedIds = access.woo.split(",").map(id => parseInt(id, 10));
@@ -287,8 +356,8 @@ export default function ManageProducts() {
     return tree.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()));
   }, [categories, catSearch, profile]);
 
-  const selectedCatName = selCatId === null 
-    ? "All Categories" 
+  const selectedCatName = selCatId === null
+    ? "All Categories"
     : categories.find(c => c.id === selCatId)?.name || "Unknown";
   const getStockState = (status?: string): StockState => status === "outofstock" ? "outofstock" : "instock";
   const deriveParentStockFromVariations = (variations: WooVariation[]): StockState => {
@@ -420,10 +489,6 @@ export default function ManageProducts() {
     }
   };
 
-  const handleConverted = (productId: number) => {
-    setProducts(prev => prev.map(p => p.id === productId ? { ...p, type: "variable" } : p));
-  };
-
   const firstEntry = products.length > 0 ? (page - 1) * PER_PAGE + 1 : 0;
   const lastEntry = (page - 1) * PER_PAGE + products.length;
 
@@ -441,11 +506,10 @@ export default function ManageProducts() {
           {/* Mobile: filter toggle */}
           <button
             onClick={() => setFilterOpen(f => !f)}
-            className={`sm:hidden flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterOpen || selCatId !== null || search
+            className={`sm:hidden flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${filterOpen || selCatId !== null || search
                 ? "bg-blue-100 text-blue-700"
                 : "bg-slate-100 text-slate-600"
-            }`}
+              }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
             Filter
@@ -610,21 +674,19 @@ export default function ManageProducts() {
           showToast,
           mappedPrices,
           isAdmin: profile?.role === "admin",
-          onOpenVarModal: () => setVarEditModalProduct(p),
-          onConvertToVariable: () => setConvertToVarProduct(p),
         });
 
         return (
           <>
             {/* ── Desktop table (sm+) ── */}
             <div className="hidden sm:flex flex-col flex-1 overflow-auto bg-white">
-              <table className="w-full text-sm text-left min-w-[600px]">
+              <table className="w-full text-sm text-left min-w-[1000px] table-fixed">
                 <thead className="sticky top-0 z-10">
                   <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide bg-slate-100 border-b border-slate-200">
                     <th className="w-10 px-3 py-2.5"></th>
-                    <th 
+                    <th
                       onClick={() => handleSort("id")}
-                      className="px-3 py-2.5 hidden md:table-cell cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                      className="w-20 px-3 py-2.5 hidden md:table-cell cursor-pointer hover:bg-slate-200 select-none transition-colors"
                     >
                       <div className="flex items-center gap-1">
                         <span>ID</span>
@@ -635,9 +697,9 @@ export default function ManageProducts() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleSort("sku")}
-                      className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                      className="w-28 px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
                     >
                       <div className="flex items-center gap-1">
                         <span>SKU</span>
@@ -648,7 +710,7 @@ export default function ManageProducts() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleSort("name")}
                       className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
                     >
@@ -661,9 +723,9 @@ export default function ManageProducts() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleSort("type")}
-                      className="px-3 py-2.5 hidden md:table-cell cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                      className="w-28 px-3 py-2.5 hidden md:table-cell cursor-pointer hover:bg-slate-200 select-none transition-colors"
                     >
                       <div className="flex items-center gap-1">
                         <span>Tipe</span>
@@ -674,9 +736,9 @@ export default function ManageProducts() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleSort("stock_status")}
-                      className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                      className="w-28 px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
                     >
                       <div className="flex items-center gap-1">
                         <span>Stok</span>
@@ -687,9 +749,9 @@ export default function ManageProducts() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    <th
                       onClick={() => handleSort("regular_price")}
-                      className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
+                      className="w-36 px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none transition-colors"
                     >
                       <div className="flex items-center gap-1">
                         <span>Harga</span>
@@ -700,8 +762,8 @@ export default function ManageProducts() {
                         )}
                       </div>
                     </th>
-                    <th className="px-3 py-2.5 hidden lg:table-cell">Harga Potongan</th>
-                    <th className="px-3 py-2.5">Kontrol</th>
+                    <th className="w-36 px-3 py-2.5 hidden lg:table-cell">Harga Potongan</th>
+                    <th className="w-32 px-3 py-2.5">Kontrol</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -760,7 +822,7 @@ export default function ManageProducts() {
               </p>
             </div>
             <div className="flex border-t border-slate-100">
-              <button 
+              <button
                 onClick={() => setProductToDelete(null)}
                 disabled={deleting.has(productToDelete.id)}
                 className="flex-1 py-3.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
@@ -768,7 +830,7 @@ export default function ManageProducts() {
                 Batal
               </button>
               <div className="w-px bg-slate-100" />
-              <button 
+              <button
                 onClick={confirmDelete}
                 disabled={deleting.has(productToDelete.id)}
                 className="flex-1 py-3.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
@@ -784,42 +846,13 @@ export default function ManageProducts() {
         </div>
       )}
 
-      {/* Variation Edit Modal */}
-      {varEditModalProduct && (
-        <VarEditModal
-          product={varEditModalProduct}
-          onClose={() => setVarEditModalProduct(null)}
-          onSaved={() => {
-            // refresh product data or variations if needed
-            toggleExpand(varEditModalProduct.id);
-            if (expanded.has(varEditModalProduct.id)) {
-              // collapse and expand to reload
-              setExpanded(prev => {
-                const next = new Set(prev);
-                next.delete(varEditModalProduct.id);
-                return next;
-              });
-              setTimeout(() => toggleExpand(varEditModalProduct.id), 100);
-            }
-          }}
-        />
-      )}
-
-      {convertToVarProduct && (
-        <ConvertToVariableModal
-          product={convertToVarProduct}
-          onClose={() => setConvertToVarProduct(null)}
-          onConverted={handleConverted}
-        />
-      )}
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 max-w-xs ${
-          toast.type === 'success' ? 'bg-white border-green-200 text-green-800 shadow-green-100' :
-          toast.type === 'error'   ? 'bg-white border-red-200 text-red-700 shadow-red-100' :
-                                     'bg-white border-blue-200 text-blue-700 shadow-blue-100'
-        }`}>
+        <div className={`fixed bottom-5 right-5 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium z-50 max-w-xs ${toast.type === 'success' ? 'bg-white border-green-200 text-green-800 shadow-green-100' :
+            toast.type === 'error' ? 'bg-white border-red-200 text-red-700 shadow-red-100' :
+              'bg-white border-blue-200 text-blue-700 shadow-blue-100'
+          }`}>
           {toast.type === 'loading'
             ? <RefreshCw className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
             : toast.type === 'success'
@@ -837,7 +870,7 @@ export default function ManageProducts() {
 // Sub-components
 // ---------------------------------------------------------
 
-function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices, isAdmin, onOpenVarModal, onConvertToVariable }: {
+function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, mappedPrices, isAdmin }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -852,11 +885,9 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
   updatingVarStock: Set<string>;
   onToggleVariationStock: (v: WooVariation) => void;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
-  showToast: (msg: string, type: "success"|"error"|"loading") => void;
+  showToast: (msg: string, type: "success" | "error" | "loading") => void;
   mappedPrices: Record<number, { cp: string | null; price: string | null; sp: string | null }>;
   isAdmin: boolean;
-  onOpenVarModal: () => void;
-  onConvertToVariable: () => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -889,20 +920,18 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
           </div>
           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
             {/* Type badge — always visible on mobile, hidden md+ (shown in dedicated col) */}
-            <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold md:hidden ${
-              isVar ? "bg-purple-100 text-purple-700" : "bg-sky-100 text-sky-700"
-            }`}>
+            <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold md:hidden ${isVar ? "bg-purple-100 text-purple-700" : "bg-sky-100 text-sky-700"
+              }`}>
               {isVar ? "Variable" : "Simple"}
             </span>
             {p.sku && <span className="sm:hidden text-[10px] text-slate-400 font-mono truncate">{p.sku}</span>}
           </div>
         </td>
         <td className="px-3 py-3 hidden md:table-cell">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
-            isVar
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${isVar
               ? "bg-purple-50 text-purple-700 border-purple-200"
               : "bg-sky-50 text-sky-700 border-sky-200"
-          }`}>
+            }`}>
             {isVar ? "Variable" : "Simple"}
           </span>
         </td>
@@ -935,13 +964,11 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                 role="switch"
                 aria-checked={stockStatus === "instock"}
                 title={stockStatus === "instock" ? "Klik untuk Habis" : "Klik untuk In Stock"}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
-                  stockStatus === "instock" ? "bg-green-500" : "bg-slate-300"
-                } disabled:opacity-40 disabled:cursor-not-allowed`}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${stockStatus === "instock" ? "bg-green-500" : "bg-slate-300"
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
               >
-                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                  stockStatus === "instock" ? "translate-x-[18px]" : "translate-x-0.5"
-                }`} />
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${stockStatus === "instock" ? "translate-x-[18px]" : "translate-x-0.5"
+                  }`} />
               </button>
               <span className={`text-[11px] font-medium leading-none ${stockStatus === "instock" ? "text-green-700" : "text-slate-400"}`}>
                 {isUpdatingStock ? <RefreshCw className="w-3 h-3 animate-spin inline" /> : stockStatus === "instock" ? "Ada" : "Habis"}
@@ -952,11 +979,10 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
               onClick={(e) => { e.stopPropagation(); onToggleStatus(); }}
               disabled={isUpdatingStatus}
               title={isPublished ? "Klik untuk Private" : "Klik untuk Publish"}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit disabled:opacity-40 disabled:cursor-not-allowed ${
-                isPublished
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit disabled:opacity-40 disabled:cursor-not-allowed ${isPublished
                   ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
                   : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200"
-              }`}
+                }`}
             >
               {isUpdatingStatus
                 ? <RefreshCw className="w-3 h-3 animate-spin" />
@@ -979,28 +1005,18 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                 Hapus
               </button>
             )}
-            {/* Edit Variasi button */}
-            {isVar && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onOpenVarModal(); }}
-                title="Edit Variasi"
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100`}
-              >
-                <ListTree className="w-3 h-3" />
-                Edit Variasi
-              </button>
-            )}
-            {/* Convert to Variable button */}
-            {!isVar && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onConvertToVariable(); }}
-                title="Konversi ke Variable"
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
-              >
-                <GitBranch className="w-3 h-3" />
-                Ke Variable
-              </button>
-            )}
+            <Link
+              href={`/dashboard/manage/${p.id}`}
+              onClick={(e) => e.stopPropagation()}
+              title="Edit Produk & Variasi"
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition-colors w-fit ${isVar
+                  ? "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
+                  : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                }`}
+            >
+              {isVar ? <ListTree className="w-3 h-3" /> : <GitBranch className="w-3 h-3" />}
+              {isVar ? "Edit Variasi" : "Ke Variable"}
+            </Link>
           </div>
         </td>
       </tr>
@@ -1063,13 +1079,11 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
                       role="switch"
                       aria-checked={varInStock}
                       title={varInStock ? "Klik untuk Habis" : "Klik untuk Ada"}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ${
-                        varInStock ? "bg-green-500" : "bg-slate-300"
-                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ${varInStock ? "bg-green-500" : "bg-slate-300"
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}
                     >
-                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                        varInStock ? "translate-x-[18px]" : "translate-x-0.5"
-                      }`} />
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${varInStock ? "translate-x-[18px]" : "translate-x-0.5"
+                        }`} />
                     </button>
                     {updatingVarStock.has(`${p.id}-${v.id}`) && (
                       <RefreshCw className="w-3 h-3 animate-spin text-slate-400" />
@@ -1092,7 +1106,7 @@ function ProductRow({ product: p, expanded, onToggleExpand, varCache, isLoadingV
 }
 
 // ── ProductCard — mobile card view ──────────────────────────────────────────
-function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, isAdmin, onOpenVarModal, onConvertToVariable }: {
+function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoadingVars, isUpdatingStock, onToggleStock, isUpdatingStatus, onToggleStatus, isDeleting, onDelete, updatingVarStock, onToggleVariationStock, onUpdate, showToast, isAdmin }: {
   product: WooProduct;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -1109,8 +1123,6 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
   showToast: (msg: string, type: "success" | "error" | "loading") => void;
   isAdmin: boolean;
-  onOpenVarModal: () => void;
-  onConvertToVariable: () => void;
 }) {
   const isVar = p.type === 'variable';
   const stockStatus: StockState = p.stock_status === "outofstock" ? "outofstock" : "instock";
@@ -1123,9 +1135,8 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-              <span className={`inline-flex items-center px-1.5 py-px rounded-md text-[10px] font-bold tracking-wide ${
-                isVar ? "bg-purple-100 text-purple-700" : "bg-sky-100 text-sky-700"
-              }`}>
+              <span className={`inline-flex items-center px-1.5 py-px rounded-md text-[10px] font-bold tracking-wide ${isVar ? "bg-purple-100 text-purple-700" : "bg-sky-100 text-sky-700"
+                }`}>
                 {isVar ? "Variable" : "Simple"}
               </span>
               <span className="text-[10px] font-mono text-slate-300">#{p.id}</span>
@@ -1140,11 +1151,10 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
           {isVar && (
             <button
               onClick={onToggleExpand}
-              className={`p-2.5 rounded-xl transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center border ${
-                expanded
+              className={`p-2.5 rounded-xl transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center border ${expanded
                   ? "bg-purple-100 text-purple-600 border-purple-200"
                   : "bg-slate-50 text-slate-400 border-slate-200"
-              }`}
+                }`}
               aria-label={expanded ? "Tutup variasi" : "Lihat variasi"}
             >
               <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
@@ -1181,13 +1191,11 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
               role="switch"
               aria-checked={stockStatus === "instock"}
               title={stockStatus === "instock" ? "Klik untuk Habis" : "Klik untuk Ada"}
-              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 ${
-                stockStatus === "instock" ? "bg-green-500" : "bg-slate-300"
-              } disabled:opacity-40`}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 ${stockStatus === "instock" ? "bg-green-500" : "bg-slate-300"
+                } disabled:opacity-40`}
             >
-              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 ${
-                stockStatus === "instock" ? "translate-x-6" : "translate-x-1"
-              }`} />
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 ${stockStatus === "instock" ? "translate-x-6" : "translate-x-1"
+                }`} />
             </button>
             <span className="text-[9px] text-slate-400 font-medium">Stok</span>
           </div>
@@ -1197,11 +1205,10 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
               onClick={(e) => { e.stopPropagation(); onToggleStatus(); }}
               disabled={isUpdatingStatus}
               title={isPublished ? "Klik untuk Private" : "Klik untuk Publish"}
-              className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors disabled:opacity-40 ${
-                isPublished
+              className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors disabled:opacity-40 ${isPublished
                   ? "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
                   : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"
-              }`}
+                }`}
             >
               {isUpdatingStatus
                 ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1227,32 +1234,21 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
               <span className="text-[9px] text-slate-400 font-medium">Hapus</span>
             </div>
           )}
-          {/* Edit Variasi toggle */}
-          {isVar && (
-            <div className="flex flex-col items-center gap-0.5">
-              <button
-                onClick={(e) => { e.stopPropagation(); onOpenVarModal(); }}
-                title="Edit Variasi"
-                className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100`}
-              >
-                <ListTree className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-[9px] text-slate-400 font-medium">Variasi</span>
-            </div>
-          )}
-          {/* Convert to Variable toggle */}
-          {!isVar && (
-            <div className="flex flex-col items-center gap-0.5">
-              <button
-                onClick={(e) => { e.stopPropagation(); onConvertToVariable(); }}
-                title="Konversi ke Variable"
-                className="inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
-              >
-                <GitBranch className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-[9px] text-slate-400 font-medium">Ke Var</span>
-            </div>
-          )}
+          {/* Edit or Convert toggle */}
+          <div className="flex flex-col items-center gap-0.5">
+            <Link
+              href={`/dashboard/manage/${p.id}`}
+              onClick={(e) => e.stopPropagation()}
+              title="Edit Produk & Variasi"
+              className={`inline-flex items-center justify-center h-7 w-12 rounded-full border transition-colors ${isVar
+                  ? "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
+                  : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                }`}
+            >
+              {isVar ? <ListTree className="w-3.5 h-3.5" /> : <GitBranch className="w-3.5 h-3.5" />}
+            </Link>
+            <span className="text-[9px] text-slate-400 font-medium">{isVar ? "Variasi" : "Ke Var"}</span>
+          </div>
         </div>
       </div>
 
@@ -1293,13 +1289,11 @@ function ProductCard({ product: p, expanded, onToggleExpand, varCache, isLoading
                       disabled={updatingVarStock.has(`${p.id}-${v.id}`)}
                       role="switch"
                       aria-checked={varInStock}
-                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${
-                        varInStock ? "bg-green-500" : "bg-slate-300"
-                      } disabled:opacity-40`}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${varInStock ? "bg-green-500" : "bg-slate-300"
+                        } disabled:opacity-40`}
                     >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                        varInStock ? "translate-x-6" : "translate-x-1"
-                      }`} />
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${varInStock ? "translate-x-6" : "translate-x-1"
+                        }`} />
                     </button>
                   </div>
                 );
@@ -1322,7 +1316,7 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", p
   prefix?: string;
   productName?: string;
   onUpdate: (id: number, field: string, val: string, type: string, parentId?: number) => void;
-  showToast: (msg: string, type: "success"|"error"|"loading") => void;
+  showToast: (msg: string, type: "success" | "error" | "loading") => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(val || "");
@@ -1338,14 +1332,14 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", p
       setEditing(false);
       return;
     }
-    
+
     setSaving(true);
     showToast("Saving...", "loading");
     try {
-      const endpoint = prodType === 'variation' && parentId 
-        ? `products/${parentId}/variations/${id}` 
+      const endpoint = prodType === 'variation' && parentId
+        ? `products/${parentId}/variations/${id}`
         : `products/${id}`;
-        
+
       await wooFetch(endpoint, 'PUT', { [field]: value });
       onUpdate(id, field, value, prodType, parentId);
       const actionMap: Record<string, string> = { sku: "update_sku", name: "update_name", regular_price: "update_price", sale_price: "update_sale_price" };
@@ -1370,7 +1364,7 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", p
   if (editing) {
     return (
       <div className="flex items-center gap-1 relative z-10" onClick={e => e.stopPropagation()}>
-        <input 
+        <input
           autoFocus
           type={type}
           value={value}
@@ -1382,7 +1376,7 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", p
         <button onClick={handleSave} disabled={saving} className="p-1 text-blue-600 hover:bg-blue-50 rounded">
           {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
         </button>
-        <button onClick={() => { setValue(val||""); setEditing(false); }} disabled={saving} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded">
+        <button onClick={() => { setValue(val || ""); setEditing(false); }} disabled={saving} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -1390,7 +1384,7 @@ function EditableCell({ id, parentId, field, val, type, prodType, prefix = "", p
   }
 
   return (
-    <div 
+    <div
       className="group inline-flex items-center gap-2 cursor-pointer px-2 py-1 -ml-2 rounded hover:bg-slate-200/50 transition-colors"
       onClick={(e) => { e.stopPropagation(); setEditing(true); }}
     >

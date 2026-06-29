@@ -118,12 +118,69 @@ export default function SyncPage() {
     const timer = setTimeout(async () => {
       setWooLoading(true);
       try {
-        const results = await wooFetch("products", "GET", undefined, {
-          search: wooSearch.trim(),
-          per_page: 10,
-          _fields: "id,name,sku,type,regular_price",
-        }) as WooSearchResult[];
-        setWooResults(results.filter((r) => !r.type || r.type !== "variation"));
+        const query = wooSearch.trim();
+        let promises: Promise<any>[] = [];
+
+        if (/^#\d+$/.test(query)) {
+          const idToSearch = query.substring(1);
+          promises.push(
+            wooFetch(`products/${idToSearch}`, "GET").then(p => p ? [p] : []).catch(() => [])
+          );
+        } else {
+          promises = [
+            wooFetch("products", "GET", undefined, { search: query, per_page: 10, _fields: "id,name,sku,type,regular_price,attributes" }),
+            wooFetch("products", "GET", undefined, { sku: query, per_page: 10, _fields: "id,name,sku,type,regular_price,attributes" })
+          ];
+
+          if (/^\d+$/.test(query)) {
+            promises.push(wooFetch(`products/${query}`, "GET").then(p => p ? [p] : []).catch(() => []));
+          }
+
+          // Fallback: cari dengan membuang kata-kata atribut (ukuran/angka)
+          const words = query.split(/\s+/).filter(w => w.length > 0);
+          if (words.length > 1) {
+            const attrRegex = /^(\d+|gb|tb|mb|hz|mhz|ddr\d|gen\d.*|ram|rom|ssd|hdd|nvme|sata|inch|black|white|hitam|putih)$/i;
+            const nonAttrWords = words.filter(w => !attrRegex.test(w));
+            if (nonAttrWords.length > 0 && nonAttrWords.length < words.length) {
+              promises.push(wooFetch("products", "GET", undefined, { search: nonAttrWords.join(" "), per_page: 10, _fields: "id,name,sku,type,regular_price,attributes" }).catch(() => []));
+            }
+            
+            // Fallback: cari dengan kata terpanjang saja (biasanya merek/seri spesifik)
+            const longestWord = [...words].sort((a,b) => b.length - a.length)[0];
+            if (longestWord && longestWord.length > 3) {
+              promises.push(wooFetch("products", "GET", undefined, { search: longestWord, per_page: 10, _fields: "id,name,sku,type,regular_price,attributes" }).catch(() => []));
+            }
+          }
+        }
+
+        const results = await Promise.all(promises);
+        let combined = results.flat() as WooSearchResult[];
+        
+        const uniqueMap = new Map<number, WooSearchResult>();
+        combined.forEach(p => {
+          if (p && p.id && !uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
+        });
+
+        let finalResults = Array.from(uniqueMap.values());
+
+        // Fuzzy Client-Side Filter & Relevance Sort
+        if (!/^#\d+$/.test(query) && query.length > 0) {
+          const cleanQuery = query.toLowerCase().replace(/(\d+)\s*(gb|tb|mb|mhz|hz|inch)/g, "$1$2");
+          const filterWords = cleanQuery.split(/\s+/).filter(w => w.length > 0);
+          
+          finalResults = finalResults.filter(p => {
+            let searchableText = [
+              p.name, 
+              p.sku, 
+              ...(p.attributes?.map((a: any) => typeof a.options === 'object' ? a.options.join(" ") : "") || []) // Di endpoint product, attributes format options
+            ].join(" ").toLowerCase();
+            searchableText = searchableText.replace(/(\d+)\s*(gb|tb|mb|mhz|hz|inch)/g, "$1$2");
+            
+            return filterWords.every(w => searchableText.includes(w));
+          });
+        }
+
+        setWooResults(finalResults.filter((r) => !r.type || r.type !== "variation"));
       } catch (err: unknown) {
         showToast("Gagal cari di WooCommerce: " + (err instanceof Error ? err.message : "error"), "error");
       } finally {
