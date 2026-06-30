@@ -21,6 +21,7 @@ type WooSearchResult = {
   type: string;
   regular_price: string;
   variations?: number[];
+  attributes?: any[];
 };
 
 type WooVariationResult = {

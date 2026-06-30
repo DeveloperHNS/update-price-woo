@@ -10,6 +10,7 @@ export interface WooProduct {
   parent?: number;
   description?: string;
   attributes?: Array<{ id: number; name: string; position?: number; visible?: boolean; variation?: boolean; options: string[] }>;
+  images?: Array<{ id: number; src: string; name?: string; alt?: string }>;
 }
 
 export interface WooVariation {
@@ -19,6 +20,7 @@ export interface WooVariation {
   sale_price?: string;
   stock_status?: 'instock' | 'outofstock' | string;
   attributes?: Array<{ id?: number; name: string; option: string }>;
+  image?: { id: number; src: string; name?: string; alt?: string };
 }
 
 type WooParams = Record<string, string | number | boolean>;

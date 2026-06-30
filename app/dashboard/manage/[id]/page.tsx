@@ -111,7 +111,7 @@ export default function EditProductPage() {
       if (!attrs.find((a: any) => a.name.toLowerCase() === "warna" || a.name.toLowerCase() === "color")) {
         attrs = [
           ...attrs,
-          { name: "Warna", visible: true, variation: true, options: ["Hitam"] }
+          { id: 0, name: "Warna", visible: true, variation: true, options: ["Hitam"] }
         ];
       }
 
@@ -309,7 +309,7 @@ export default function EditProductPage() {
         if (!v.attributes) return false;
         // check if every attr in attrsForVar matches
         return attrsForVar.every(newAttr =>
-          v.attributes.some((existAttr: any) => existAttr.name === newAttr.name && existAttr.option === newAttr.option)
+          v.attributes!.some((existAttr: any) => existAttr.name === newAttr.name && existAttr.option === newAttr.option)
         );
       });
 

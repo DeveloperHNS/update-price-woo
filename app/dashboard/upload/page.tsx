@@ -64,7 +64,7 @@ export default function UploadProductPage() {
 
   const [variations, setVariations] = useState<{
     key: string;
-    attributes: {id: number, name: string, option: string}[];
+    attributes: {id: number, name: string, option: string, slug?: string}[];
     regular_price: string;
     sale_price: string;
     sku: string;
