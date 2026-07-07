@@ -5,6 +5,9 @@ import { jwtVerify } from 'jose';
 const getSecret = () => new TextEncoder().encode(process.env.JWT_SECRET!);
 
 export async function middleware(request: NextRequest) {
+  // SSO temporarily disabled
+  return NextResponse.next();
+  /*
   const token = request.cookies.get('sso_token')?.value;
 
   if (!token) {
@@ -32,6 +35,7 @@ export async function middleware(request: NextRequest) {
     response.cookies.delete('sso_token');
     return response;
   }
+  */
 }
 
 export const config = {

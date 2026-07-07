@@ -18,12 +18,6 @@ function isAllowedWooEndpoint(endpoint: string): boolean {
   return ALLOWED_ENDPOINT_PATTERNS.some((pattern) => pattern.test(endpoint));
 }
 
-function authHeaderValue(): string {
-  const token = Buffer.from(
-    `${serverEnv.WOO_CONSUMER_KEY}:${serverEnv.WOO_CONSUMER_SECRET}`,
-  ).toString("base64");
-  return `Basic ${token}`;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -55,6 +49,10 @@ export async function POST(req: NextRequest) {
 
     const apiUrl = new URL(`${serverEnv.WOO_URL}/wp-json/wc/v3/${endpoint}`);
 
+    // Pass WooCommerce credentials as query params (bypasses CDN/WAF that strips Authorization headers)
+    apiUrl.searchParams.set("consumer_key", serverEnv.WOO_CONSUMER_KEY);
+    apiUrl.searchParams.set("consumer_secret", serverEnv.WOO_CONSUMER_SECRET);
+
     // Add any extra query parameters
     if (params) {
       for (const [k, v] of Object.entries(params)) {
@@ -65,11 +63,8 @@ export async function POST(req: NextRequest) {
     const opts: RequestInit = {
       method: normalizedMethod,
       headers: {
-        Authorization: authHeaderValue(),
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, */*",
-        "X-Bypass-Cloudflare": "HNS-IT-CENTER-API",
+        "Accept": "application/json",
       },
     };
 
@@ -81,6 +76,16 @@ export async function POST(req: NextRequest) {
 
     // WooCommerce sometimes returns empty bodies for 204 No Content
     const responseText = await response.text();
+
+    // Detect CDN/WAF challenge page (HTML instead of JSON)
+    const isHtmlResponse = responseText.trimStart().startsWith("<!DOCTYPE") || responseText.trimStart().startsWith("<html");
+    if (isHtmlResponse) {
+      return NextResponse.json(
+        { error: `WooCommerce diblokir CDN/WAF (status ${response.status}). Whitelist IP server ini di panel hosting WooCommerce.` },
+        { status: 502 },
+      );
+    }
+
     let responseData;
     try {
       responseData = responseText ? JSON.parse(responseText) : {};
