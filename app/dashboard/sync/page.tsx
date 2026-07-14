@@ -8,9 +8,9 @@ import { wooFetch } from "@/lib/api";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import {
   Search, RefreshCw, AlertCircle, CheckCircle2,
-  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2, FileUp, EyeOff, Undo2
+  Link2, Link2Off, ArrowRight, X, ChevronRight, Zap, Trash2, FileUp, EyeOff, Undo2, DownloadCloud
 } from "lucide-react";
-import { formatRp } from "@/lib/format";
+import { formatRp, parseProductName } from "@/lib/format";
 
 type Tab = "unmatched" | "needs_review" | "matched" | "ignored";
 
@@ -53,11 +53,22 @@ export default function SyncPage() {
   const [tab, setTab] = useState<Tab>("unmatched");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" | "loading" } | null>(null);
 
   // CSV Automap state
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [csvUploading, setCsvUploading] = useState(false);
+  const [pullingSheet, setPullingSheet] = useState(false);
+
+  // Custom Confirm Modal State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    actionLabel: string;
+    actionClass: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Matching modal
   const [matchTarget, setMatchTarget] = useState<ProductWithStatus | null>(null);
@@ -287,19 +298,28 @@ export default function SyncPage() {
   };
 
   const handleUnmatch = async (kode: string) => {
-    if (!profile || !confirm("Yakin ingin melepas mapping produk ini?")) return;
-    try {
-      const res = await fetch("/api/sync/unmatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kode_accurate: kode, triggered_by: profile.id })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      showToast("Mapping dilepas!", "success");
-      loadProducts(tab, profile.pic_category);
-    } catch(err: any) {
-      showToast("Gagal melepas mapping: " + err.message, "error");
-    }
+    if (!profile) return;
+    setConfirmDialog({
+      title: "Lepas Mapping",
+      message: "Yakin ingin melepas mapping produk ini? Produk akan kembali ke status 'Belum Dimapping'.",
+      actionLabel: "Ya, Lepas",
+      actionClass: "bg-rose-600 hover:bg-rose-700",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          const res = await fetch("/api/sync/unmatch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kode_accurate: kode, triggered_by: profile.id })
+          });
+          if (!res.ok) throw new Error(await res.text());
+          showToast("Mapping dilepas!", "success");
+          loadProducts(tab, profile.pic_category);
+        } catch(err: any) {
+          showToast("Gagal melepas mapping: " + err.message, "error");
+        }
+      }
+    });
   };
 
   const handleSyncPrice = async (kode: string) => {
@@ -333,39 +353,74 @@ export default function SyncPage() {
       showToast("Tidak ada produk unmatched", "error");
       return;
     }
-    if (!confirm(`Mulai Auto Map Cerdas untuk ${unmatched.length} produk? Proses ini memakan waktu beberapa menit.`)) return;
+    
+    setConfirmDialog({
+      title: "Mulai Auto Map Cerdas",
+      message: `Anda akan mencocokkan ${unmatched.length} produk secara otomatis. Proses ini akan memakan waktu beberapa saat.`,
+      actionLabel: "Mulai Auto Map",
+      actionClass: "bg-blue-600 hover:bg-blue-700",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setAutoMapping(true);
+        setAutoMapProgress({ total: unmatched.length, current: 0 });
 
-    setAutoMapping(true);
-    setAutoMapProgress({ total: unmatched.length, current: 0 });
+        try {
+          const BATCH_SIZE = 5;
+          for (let i = 0; i < unmatched.length; i += BATCH_SIZE) {
+            const batch = unmatched.slice(i, i + BATCH_SIZE).map(p => ({
+              kode: p["Kode Accurate"] || "",
+              nama: p["NAMA BARANG"] || "",
+              brand: p["NAMA BRAND"] || ""
+            }));
 
-    try {
-      const BATCH_SIZE = 5;
-      for (let i = 0; i < unmatched.length; i += BATCH_SIZE) {
-        const batch = unmatched.slice(i, i + BATCH_SIZE).map(p => ({
-          kode: p["Kode Accurate"] || "",
-          nama: p["NAMA BARANG"] || ""
-        }));
+            const res = await fetch("/api/sync/automap", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ products: batch, triggered_by: profile.id })
+            });
+            
+            if (!res.ok) {
+              console.error("Batch failed", await res.text());
+            }
 
-        const res = await fetch("/api/sync/automap", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ products: batch, triggered_by: profile.id })
-        });
-        
-        if (!res.ok) {
-          console.error("Batch failed", await res.text());
+            setAutoMapProgress(prev => prev ? { ...prev, current: Math.min(prev.total, prev.current + BATCH_SIZE) } : null);
+          }
+          showToast("Auto Map selesai!", "success");
+          loadProducts(tab, profile.pic_category);
+        } catch (err: any) {
+          showToast("Auto Map error: " + err.message, "error");
+        } finally {
+          setAutoMapping(false);
+          setTimeout(() => setAutoMapProgress(null), 2000);
         }
-
-        setAutoMapProgress(prev => prev ? { ...prev, current: Math.min(prev.total, prev.current + BATCH_SIZE) } : null);
       }
-      showToast("Auto Map selesai!", "success");
-      loadProducts(tab, profile.pic_category);
-    } catch (err: any) {
-      showToast("Auto Map error: " + err.message, "error");
-    } finally {
-      setAutoMapping(false);
-      setTimeout(() => setAutoMapProgress(null), 2000);
-    }
+    });
+  };
+
+  const handlePullSheet = async () => {
+    setConfirmDialog({
+      title: "Konfirmasi Tarik Data GSheet",
+      message: "Tarik data terbaru dari Google Sheet Master Data? Proses ini mungkin butuh waktu beberapa detik.",
+      actionLabel: "Ya, Tarik Data",
+      actionClass: "bg-teal-600 hover:bg-teal-700",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setPullingSheet(true);
+        showToast("Sedang menarik data dari Google Sheet...", "loading");
+        try {
+          const res = await fetch("/api/sheet/pull", { method: "POST" });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Gagal menarik data");
+          
+          showToast(`Berhasil! ${data.upserted} produk diperbarui dari total ${data.total} baris.`, "success");
+          loadProducts(tab, profile?.pic_category ?? null);
+        } catch(err: any) {
+          showToast("Error tarik data: " + err.message, "error");
+        } finally {
+          setPullingSheet(false);
+        }
+      }
+    });
   };
 
   const handleUploadCsv = () => {
@@ -428,24 +483,40 @@ export default function SyncPage() {
 
   const handleResetReview = async () => {
     if (!profile) return;
-    if (!confirm("Yakin ingin mereset semua produk yang berstatus 'Perlu Review'? Produk akan kembali ke status 'Belum Dimapping'.")) return;
-    showToast("Mereset Perlu Review...", "loading");
-    try {
-      const res = await fetch("/api/sync/reset-review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ triggered_by: profile.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      showToast("Berhasil mereset!", "success");
-      loadProducts(tab, profile.pic_category);
-    } catch (err: any) {
-      showToast("Gagal mereset: " + err.message, "error");
-    }
+    setConfirmDialog({
+      title: "Reset Perlu Review",
+      message: "Yakin ingin mereset semua produk yang berstatus 'Perlu Review'? Produk akan kembali ke status 'Belum Dimapping'.",
+      actionLabel: "Ya, Reset Semua",
+      actionClass: "bg-red-600 hover:bg-red-700",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        showToast("Mereset Perlu Review...", "loading");
+        try {
+          const res = await fetch("/api/sync/reset-review", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ triggered_by: profile.id }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+          showToast("Berhasil mereset!", "success");
+          loadProducts(tab, profile.pic_category);
+        } catch (err: any) {
+          showToast("Gagal mereset: " + err.message, "error");
+        }
+      }
+    });
   };
 
   const filtered = products.filter((p) => {
+    // 1. Status filter
+    if (statusFilter !== "ALL") {
+      const pStatus = (p["STATUS"] ?? "").toUpperCase();
+      if (statusFilter === "YA" && pStatus !== "YA") return false;
+      if (statusFilter === "TIDAK" && pStatus !== "TIDAK") return false;
+    }
+
+    // 2. Search text filter
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -501,6 +572,14 @@ export default function SyncPage() {
             </>
           )}
           <button
+            onClick={handlePullSheet}
+            disabled={loading || autoMapping || pullingSheet}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <DownloadCloud className={`w-4 h-4 ${pullingSheet ? "animate-bounce" : ""}`} />
+            <span className="hidden sm:inline">{pullingSheet ? "Menarik..." : "Tarik GSheet"}</span>
+          </button>
+          <button
             onClick={() => loadProducts(tab, profile?.pic_category ?? null)}
             disabled={loading || autoMapping}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
@@ -554,9 +633,9 @@ export default function SyncPage() {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="px-4 py-2.5 border-b border-slate-100 shrink-0">
-        <div className="relative">
+      {/* Search & Filter */}
+      <div className="flex flex-col sm:flex-row gap-3 px-4 py-2.5 border-b border-slate-100 shrink-0">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
@@ -565,6 +644,17 @@ export default function SyncPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 pr-4 py-2 w-full border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
           />
+        </div>
+        <div className="shrink-0">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="w-full sm:w-auto px-3 py-2 text-sm border border-slate-200 rounded-xl text-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white cursor-pointer"
+          >
+            <option value="ALL">Semua Status</option>
+            <option value="TIDAK">Aktif (TIDAK)</option>
+            <option value="YA">Non-Aktif (YA)</option>
+          </select>
         </div>
       </div>
 
@@ -590,6 +680,8 @@ export default function SyncPage() {
             {filtered.map((p) => {
               const kode = p["Kode Accurate"] ?? "";
               const isSyncing = syncingPrice.has(kode);
+              const parsedName = parseProductName(p["NAMA BARANG"] ?? "");
+              
               return (
                 <div key={kode} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
                   {/* Left: product info */}
@@ -609,9 +701,16 @@ export default function SyncPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm font-semibold text-slate-800 truncate">
-                      {p["NAMA BARANG"] ?? "—"}
-                    </p>
+                    <div className="flex flex-col mt-0.5">
+                      <p className="text-sm font-semibold text-slate-800 truncate">
+                        {parsedName.name || "—"}
+                      </p>
+                      {parsedName.specs && (
+                        <p className="text-[11px] font-medium text-slate-500 mt-0.5 leading-snug truncate">
+                          {parsedName.specs}
+                        </p>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                       {p["SP"] && (
                         <span className="text-xs text-slate-600">
@@ -760,7 +859,16 @@ export default function SyncPage() {
                   </div>
                   <div>
                     <p className="text-[10px] text-slate-400">Nama Barang</p>
-                    <p className="text-sm font-semibold text-slate-800 leading-snug">{matchTarget["NAMA BARANG"]}</p>
+                    <div className="flex flex-col">
+                      <p className="text-sm font-semibold text-slate-800 leading-snug">
+                        {parseProductName(matchTarget["NAMA BARANG"] || "").name}
+                      </p>
+                      {parseProductName(matchTarget["NAMA BARANG"] || "").specs && (
+                        <p className="text-[11px] font-medium text-slate-500 mt-0.5 leading-snug">
+                          {parseProductName(matchTarget["NAMA BARANG"] || "").specs}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   {matchTarget["KATEGORI"] && (
                     <div>
@@ -967,13 +1075,52 @@ export default function SyncPage() {
                 </button>
                 <button
                   onClick={handleConfirmMatch}
-                  disabled={!selectedWoo || saving}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={saving || !selectedWoo}
+                  className="flex items-center gap-1.5 px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors disabled:opacity-50"
                 >
-                  {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-                  Konfirmasi Match
+                  {saving ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  Simpan Mapping
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Dialog Modal */}
+      {confirmDialog && (
+        <div 
+          className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setConfirmDialog(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 mb-4 text-slate-600">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">{confirmDialog.title}</h3>
+            <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+              {confirmDialog.message}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="flex-1 px-4 py-2 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className={`flex-1 px-4 py-2 text-sm font-semibold text-white rounded-xl transition-colors ${confirmDialog.actionClass}`}
+              >
+                {confirmDialog.actionLabel}
+              </button>
             </div>
           </div>
         </div>

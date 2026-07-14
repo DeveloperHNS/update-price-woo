@@ -38,6 +38,15 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createServiceClient();
+  
+  // 1. Ambil data mapping saat ini untuk batch webhook ini
+  const kodeList = rows.map(r => r.kode_accurate).filter(Boolean);
+  const { data: existingMappings } = await supabase.from("product_woo_mapping").select("kode_accurate, woo_product_id, is_active, match_method").in("kode_accurate", kodeList);
+  const mappingMap = new Map<string, any>();
+  if (existingMappings) {
+    for (const m of existingMappings) mappingMap.set(m.kode_accurate, m);
+  }
+  
   let upserted = 0;
   const errors: string[] = [];
 
@@ -69,6 +78,34 @@ export async function POST(req: NextRequest) {
       errors.push(`${row.kode_accurate}: ${error.message}`);
     } else {
       upserted++;
+      
+      const statusValue = row.status ? row.status.toString().trim().toUpperCase() : "";
+      const existingMapping = mappingMap.get(row.kode_accurate);
+      const isAlreadyMappedToWoo = existingMapping && existingMapping.woo_product_id !== 0;
+      const isCurrentlyIgnored = existingMapping && existingMapping.is_active === false;
+
+      if (statusValue === "YA") {
+        // Auto-ignore jika belum ter-map
+        if (!isAlreadyMappedToWoo) {
+          await supabase.from("product_woo_mapping").delete().eq("kode_accurate", row.kode_accurate);
+          await supabase.from("product_woo_mapping").insert({
+            kode_accurate: row.kode_accurate,
+            woo_product_id: 0,
+            woo_variation_id: null,
+            woo_name: "IGNORED",
+            woo_sku_full: "",
+            needs_review: false,
+            is_active: false,
+            confidence_score: 100,
+            match_method: "auto_ignore"
+          });
+        }
+      } else if (statusValue === "TIDAK" || statusValue === "") {
+        // Auto-restore jika sebelumnya kena ignore
+        if (isCurrentlyIgnored && !isAlreadyMappedToWoo) {
+          await supabase.from("product_woo_mapping").delete().eq("kode_accurate", row.kode_accurate);
+        }
+      }
     }
   }
 

@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceClient();
 
     if (action === "ignore") {
-      const { error } = await supabase.from("product_woo_mapping").upsert({
+      await supabase.from("product_woo_mapping").delete().eq("kode_accurate", kode_accurate);
+      const { error } = await supabase.from("product_woo_mapping").insert({
         kode_accurate,
         woo_product_id: 0,
         woo_variation_id: null,
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
         triggered_by: triggered_by || null,
         confidence_score: 100,
         match_method: "manual_ignore"
-      }, { onConflict: "kode_accurate" });
+      });
 
       if (error) throw error;
     } else if (action === "restore") {

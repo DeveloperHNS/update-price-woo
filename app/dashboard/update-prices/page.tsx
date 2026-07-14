@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
 import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal, CloudDownload } from "lucide-react";
-import { formatRp } from "@/lib/format";
+import { formatRp, parseProductName } from "@/lib/format";
 
 
 function MultiSelectDropdown({
@@ -394,6 +394,7 @@ export default function UpdatePricesPage() {
                     const isEdited = edits[kode] !== undefined;
                     const cpValue = isEdited ? edits[kode].cp : (p["CP"] || "");
                     const priceValue = isEdited ? edits[kode].price : (p["PRICE"] || "");
+                    const parsedName = parseProductName(p["NAMA BARANG"] || "");
 
                     return (
                       <tr key={kode} className={`transition-colors ${isEdited ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
@@ -413,7 +414,14 @@ export default function UpdatePricesPage() {
                               </span>
                             )}
                           </div>
-                          <span className="font-semibold text-slate-800 text-sm">{p["NAMA BARANG"]}</span>
+                          <div className="flex flex-col mt-0.5">
+                            <span className="font-semibold text-slate-800 text-sm">{parsedName.name}</span>
+                            {parsedName.specs && (
+                              <span className="text-[11px] font-medium text-slate-500 mt-0.5 leading-snug">
+                                {parsedName.specs}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-sm font-semibold text-slate-600">{formatRp(p["SP"])}</span>
@@ -452,6 +460,7 @@ export default function UpdatePricesPage() {
                 const isEdited = edits[kode] !== undefined;
                 const cpValue = isEdited ? edits[kode].cp : (p["CP"] || "");
                 const priceValue = isEdited ? edits[kode].price : (p["PRICE"] || "");
+                const parsedName = parseProductName(p["NAMA BARANG"] || "");
 
                 return (
                   <div
@@ -472,7 +481,14 @@ export default function UpdatePricesPage() {
                             </span>
                           )}
                         </div>
-                        <p className="font-semibold text-slate-800 text-sm leading-snug">{p["NAMA BARANG"]}</p>
+                        <div className="flex flex-col mt-0.5">
+                          <p className="font-semibold text-slate-800 text-sm leading-snug">{parsedName.name}</p>
+                          {parsedName.specs && (
+                            <p className="text-[11px] font-medium text-slate-500 mt-0.5 leading-snug">
+                              {parsedName.specs}
+                            </p>
+                          )}
+                        </div>
                       </div>
                       {isEdited && (
                         <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded-full shrink-0">
