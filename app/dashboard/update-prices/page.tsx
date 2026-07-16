@@ -324,7 +324,7 @@ export default function UpdatePricesPage() {
               }`}
           >
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            <span>
+            <span className="hidden sm:inline">
               {saving ? "Menyimpan..." : hasEdits ? `Simpan (${Object.keys(edits).length})` : "Simpan"}
             </span>
           </button>
@@ -712,8 +712,8 @@ export default function UpdatePricesPage() {
 
       {/* ── Floating Bulk Action Bar ── */}
       {selectedKodes.size > 0 && (
-        <div className="fixed bottom-24 sm:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
-          <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl shadow-slate-900/20 flex items-center gap-4 sm:gap-6 border border-slate-700 w-max max-w-[90vw] overflow-x-auto">
+        <div className="fixed bottom-4 sm:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="bg-slate-900 text-white px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-2xl shadow-slate-900/20 flex items-center gap-3 sm:gap-6 border border-slate-700 w-max max-w-[95vw] overflow-x-auto">
             <div className="flex items-center gap-2 shrink-0">
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs font-bold">
                 {selectedKodes.size}
