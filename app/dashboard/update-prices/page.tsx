@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
-import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal, CloudDownload, FileSpreadsheet, FileText } from "lucide-react";
+import { Search, SlidersHorizontal, CloudDownload, RefreshCw, Save, CheckCircle2, AlertCircle, Package, ArrowUpDown, ChevronLeft, ChevronRight, ChevronDown, FileSpreadsheet, FileText, X } from "lucide-react";
 import { formatRp, parseProductName } from "@/lib/format";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -526,7 +526,7 @@ export default function UpdatePricesPage() {
             </div>
 
             {/* ── Mobile cards (<sm) ── */}
-            <div className="sm:hidden p-3 space-y-2.5 pb-32">
+            <div className="sm:hidden p-3 space-y-2.5 pb-6">
               {paginatedProducts.map((p) => {
                 const kode = p["Kode Accurate"] ?? "";
                 const isEdited = edits[kode] !== undefined;
@@ -624,7 +624,7 @@ export default function UpdatePricesPage() {
 
       {/* ── Pagination Controls ── */}
       {totalPages > 1 && !loading && (
-        <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 bg-white border-t border-slate-200 shrink-0 gap-3 pb-24 sm:pb-3">
+        <div className={`flex flex-col sm:flex-row items-center justify-between px-4 py-3 bg-white border-t border-slate-200 shrink-0 gap-3 sm:pb-3 transition-all ${selectedKodes.size > 0 ? "pb-24" : "pb-4"}`}>
           <p className="text-sm text-slate-500 hidden sm:block">
             Menampilkan {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} dari {filtered.length} produk
           </p>
@@ -632,19 +632,23 @@ export default function UpdatePricesPage() {
             <button
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 bg-white"
+              className="flex items-center gap-1 px-3 sm:px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 bg-white"
             >
-              Sebelumnya
+              <ChevronLeft className="w-4 h-4 sm:hidden" />
+              <span className="hidden sm:inline">Sebelumnya</span>
+              <span className="sm:hidden">Prev</span>
             </button>
-            <span className="text-sm font-medium text-slate-700 mx-2">
+            <span className="text-sm font-medium text-slate-700 mx-1 sm:mx-2 whitespace-nowrap">
               Hal {currentPage} / {totalPages}
             </span>
             <button
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 bg-white"
+              className="flex items-center gap-1 px-3 sm:px-4 py-2 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-700 bg-white"
             >
-              Selanjutnya
+              <span className="hidden sm:inline">Selanjutnya</span>
+              <span className="sm:hidden">Next</span>
+              <ChevronRight className="w-4 h-4 sm:hidden" />
             </button>
           </div>
         </div>
