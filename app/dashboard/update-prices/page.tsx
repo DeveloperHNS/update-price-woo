@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
-import { Search, SlidersHorizontal, CloudDownload, RefreshCw, Save, CheckCircle2, AlertCircle, Package, ArrowUpDown, ChevronLeft, ChevronRight, ChevronDown, FileSpreadsheet, FileText, X } from "lucide-react";
-import { formatRp, parseProductName } from "@/lib/format";
+import { Search, SlidersHorizontal, CloudDownload, RefreshCw, Save, CheckCircle2, AlertCircle, Package, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronDown, FileSpreadsheet, FileText, X } from "lucide-react";
+import { formatRp, parseProductName, formatNumber, parseFormattedNumber } from "@/lib/format";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -122,7 +122,16 @@ export default function UpdatePricesPage() {
   const [pulling, setPulling] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedKodes, setSelectedKodes] = useState<Set<string>>(new Set());
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>(null);
   const ITEMS_PER_PAGE = 50;
+
+  const handleSort = (key: string) => {
+    let direction: "asc" | "desc" = "asc";
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
 
   // Reset page when filters change
   useEffect(() => {
@@ -273,6 +282,20 @@ export default function UpdatePricesPage() {
     const matchBrand = brandFilter.length === 0 || brandFilter.includes(p["NAMA BRAND"] || "");
     const matchStatus = statusFilter.length === 0 || statusFilter.includes(p["STATUS"] || "Aktif");
     return matchSearch && matchCat && matchBrand && matchStatus;
+  }).sort((a, b) => {
+    if (!sortConfig) return 0;
+    const { key, direction } = sortConfig;
+    let valA = a[key as keyof ProductWithStatus];
+    let valB = b[key as keyof ProductWithStatus];
+
+    if (key === "SP" || key === "CP" || key === "PRICE" || key === "Stok Sistem") {
+      valA = Number(valA) || 0;
+      valB = Number(valB) || 0;
+    }
+
+    if ((valA ?? 0) < (valB ?? 0)) return direction === "asc" ? -1 : 1;
+    if ((valA ?? 0) > (valB ?? 0)) return direction === "asc" ? 1 : -1;
+    return 0;
   });
 
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
@@ -433,11 +456,46 @@ export default function UpdatePricesPage() {
                         className="rounded border-slate-300 w-4 h-4 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                     </th>
-                    <th className="px-4 py-3">Produk</th>
-                    <th className="px-4 py-3 w-[120px] lg:w-36">Harga SRP</th>
-                    <th className="px-4 py-3 w-[140px] lg:w-40">Harga Modal (CP)</th>
-                    <th className="px-4 py-3 w-[140px] lg:w-40">Harga Dealer</th>
-                    <th className="px-4 py-3 w-[80px]">Stok</th>
+                    <th onClick={() => handleSort("NAMA BARANG")} className="px-4 py-3 cursor-pointer hover:bg-slate-200 select-none transition-colors">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Produk</span>
+                        {sortConfig?.key === "NAMA BARANG" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("SP")} className="px-4 py-3 w-[120px] lg:w-36 cursor-pointer hover:bg-slate-200 select-none transition-colors">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Harga SRP</span>
+                        {sortConfig?.key === "SP" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("CP")} className="px-4 py-3 w-[140px] lg:w-40 cursor-pointer hover:bg-slate-200 select-none transition-colors">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Harga Modal (CP)</span>
+                        {sortConfig?.key === "CP" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("PRICE")} className="px-4 py-3 w-[140px] lg:w-40 cursor-pointer hover:bg-slate-200 select-none transition-colors">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Harga Dealer</span>
+                        {sortConfig?.key === "PRICE" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("Stok Sistem")} className="px-4 py-3 w-[80px] cursor-pointer hover:bg-slate-200 select-none transition-colors">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Stok</span>
+                        {sortConfig?.key === "Stok Sistem" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -494,8 +552,8 @@ export default function UpdatePricesPage() {
                         <td className="px-4 py-3">
                           <input
                             type="text"
-                            value={cpValue}
-                            onChange={(e) => handleEditChange(kode, "cp", e.target.value)}
+                            value={formatNumber(String(cpValue))}
+                            onChange={(e) => handleEditChange(kode, "cp", parseFormattedNumber(e.target.value))}
                             placeholder="e.g. 1.500.000"
                             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-colors ${isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50 hover:border-slate-300"
                               }`}
@@ -504,8 +562,8 @@ export default function UpdatePricesPage() {
                         <td className="px-4 py-3">
                           <input
                             type="text"
-                            value={priceValue}
-                            onChange={(e) => handleEditChange(kode, "price", e.target.value)}
+                            value={formatNumber(String(priceValue))}
+                            onChange={(e) => handleEditChange(kode, "price", parseFormattedNumber(e.target.value))}
                             placeholder="e.g. 1.800.000"
                             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium text-emerald-700 transition-colors ${isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50 hover:border-slate-300"
                               }`}
@@ -589,8 +647,8 @@ export default function UpdatePricesPage() {
                         </label>
                         <input
                           type="text"
-                          value={cpValue}
-                          onChange={(e) => handleEditChange(kode, "cp", e.target.value)}
+                          value={formatNumber(String(cpValue))}
+                          onChange={(e) => handleEditChange(kode, "cp", parseFormattedNumber(e.target.value))}
                           placeholder="e.g. 1.500.000"
                           className={`w-full px-3 py-2.5 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50"
                             }`}
@@ -602,8 +660,8 @@ export default function UpdatePricesPage() {
                         </label>
                         <input
                           type="text"
-                          value={priceValue}
-                          onChange={(e) => handleEditChange(kode, "price", e.target.value)}
+                          value={formatNumber(String(priceValue))}
+                          onChange={(e) => handleEditChange(kode, "price", parseFormattedNumber(e.target.value))}
                           placeholder="e.g. 1.800.000"
                           className={`w-full px-3 py-2.5 border rounded-xl text-sm font-medium text-emerald-700 outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isEdited ? "border-blue-300 bg-white" : "border-slate-200 bg-slate-50"
                             }`}

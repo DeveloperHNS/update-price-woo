@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getCurrentProfile, UserProfile } from "@/lib/profile";
-import { RefreshCw, ClipboardList, AlertCircle, ChevronRight, ShieldCheck, Download, FolderUp, CheckCircle2 } from "lucide-react";
+import { RefreshCw, ClipboardList, AlertCircle, ChevronRight, ShieldCheck, Download, FolderUp, CheckCircle2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 
 type ActivityLog = {
   id: number;
@@ -55,6 +55,27 @@ export default function LogsPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [exportingDrive, setExportingDrive] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>(null);
+
+  const handleSort = (key: string) => {
+    let direction: "asc" | "desc" = "asc";
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedLogs = useMemo(() => {
+    if (!sortConfig) return logs;
+    return [...logs].sort((a, b) => {
+      const { key, direction } = sortConfig;
+      const valA = String(a[key as keyof ActivityLog] || "").toLowerCase();
+      const valB = String(b[key as keyof ActivityLog] || "").toLowerCase();
+      if (valA < valB) return direction === "asc" ? -1 : 1;
+      if (valA > valB) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [logs, sortConfig]);
 
   useEffect(() => {
     getCurrentProfile().then(p => {
@@ -239,16 +260,51 @@ export default function LogsPage() {
               <table className="w-full text-sm text-left" style={{ minWidth: "900px" }}>
                 <thead className="text-[11px] text-slate-500 uppercase tracking-wide bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3 font-semibold whitespace-nowrap w-[160px]">Waktu</th>
-                    <th className="px-4 py-3 font-semibold w-[180px]">User</th>
-                    <th className="px-4 py-3 font-semibold w-[130px]">Aksi</th>
-                    <th className="px-4 py-3 font-semibold">Produk</th>
-                    <th className="px-4 py-3 font-semibold w-[90px]">Field</th>
+                    <th onClick={() => handleSort("created_at")} className="px-4 py-3 font-semibold whitespace-nowrap w-[160px] cursor-pointer hover:bg-slate-200 transition-colors select-none">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Waktu</span>
+                        {sortConfig?.key === "created_at" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("user_email")} className="px-4 py-3 font-semibold w-[180px] cursor-pointer hover:bg-slate-200 transition-colors select-none">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>User</span>
+                        {sortConfig?.key === "user_email" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("action")} className="px-4 py-3 font-semibold w-[130px] cursor-pointer hover:bg-slate-200 transition-colors select-none">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Aksi</span>
+                        {sortConfig?.key === "action" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("product_name")} className="px-4 py-3 font-semibold cursor-pointer hover:bg-slate-200 transition-colors select-none">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Produk</span>
+                        {sortConfig?.key === "product_name" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("field")} className="px-4 py-3 font-semibold w-[90px] cursor-pointer hover:bg-slate-200 transition-colors select-none">
+                      <div className="flex items-center gap-1 justify-between">
+                        <span>Field</span>
+                        {sortConfig?.key === "field" ? (
+                          sortConfig.direction === "asc" ? <ArrowUp className="w-3 h-3 text-blue-600 shrink-0" /> : <ArrowDown className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : <ArrowUpDown className="w-3 h-3 text-slate-300 shrink-0" />}
+                      </div>
+                    </th>
                     <th className="px-4 py-3 font-semibold w-[260px]">Perubahan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {logs.map((log) => (
+                  {sortedLogs.map((log: ActivityLog) => (
                     <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
                         {formatDate(log.created_at)}
@@ -295,7 +351,7 @@ export default function LogsPage() {
 
             {/* ── Mobile cards ── */}
             <div className="sm:hidden p-3 space-y-2 pb-6">
-              {logs.map((log) => (
+              {sortedLogs.map((log: ActivityLog) => (
                 <div key={log.id} className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-2.5">
                   <div className="flex items-start justify-between gap-2">
                     <ActionBadge action={log.action} />
