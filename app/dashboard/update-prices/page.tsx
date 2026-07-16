@@ -234,10 +234,8 @@ export default function UpdatePricesPage() {
       "Nama Barang": p["NAMA BARANG"],
       "Kategori": p["KATEGORI"],
       "Brand": p["NAMA BRAND"],
-      "Harga SP": formatRp(p["SP"]),
-      "Harga Modal": p["CP"],
-      "Harga Dealer": p["PRICE"],
-      "Stok": p["Stok Sistem"] ?? 0
+      "Harga SRP": formatRp(p["SP"]),
+      "Harga Dealer": p["PRICE"]
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Update_Harga");
@@ -247,18 +245,16 @@ export default function UpdatePricesPage() {
   const handleExportPdf = () => {
     const dataToExport = filtered.filter(p => selectedKodes.size === 0 || selectedKodes.has(p["Kode Accurate"] || ""));
     const doc = new jsPDF("landscape");
-    doc.text("Laporan Harga & Stok", 14, 15);
+    doc.text("Daftar Harga Produk", 14, 15);
     autoTable(doc, {
       startY: 20,
-      head: [["Kode", "Nama Barang", "Kategori", "Harga SP", "Modal", "Dealer", "Stok"]],
+      head: [["Kode", "Nama Barang", "Kategori", "Harga SRP", "Dealer"]],
       body: dataToExport.map(p => [
         p["Kode Accurate"] || "-",
         p["NAMA BARANG"] || "-",
         p["KATEGORI"] || "-",
         formatRp(p["SP"]),
-        formatRp(p["CP"]),
-        formatRp(p["PRICE"]),
-        p["Stok Sistem"]?.toString() || "0"
+        formatRp(p["PRICE"])
       ]),
       styles: { fontSize: 8 },
       headStyles: { fillColor: [41, 128, 185] }
