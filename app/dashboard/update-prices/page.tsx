@@ -299,22 +299,6 @@ export default function UpdatePricesPage() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={handleExportExcel}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors"
-            title="Export ke Excel"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span className="hidden sm:inline">Excel</span>
-          </button>
-          <button
-            onClick={handleExportPdf}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors"
-            title="Export ke PDF"
-          >
-            <FileText className="w-4 h-4" />
-            <span className="hidden sm:inline">PDF</span>
-          </button>
-          <button
             onClick={() => setConfirmModal(true)}
             disabled={loading || saving || pulling}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors disabled:opacity-50"
@@ -439,7 +423,7 @@ export default function UpdatePricesPage() {
               <table className="w-full text-sm text-left min-w-[780px] table-fixed">
                 <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
                   <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                    <th className="px-4 py-3 w-12">
+                    <th className="px-4 py-3 w-14 text-center">
                       <input
                         type="checkbox"
                         checked={paginatedProducts.length > 0 && selectedKodes.size === paginatedProducts.length}
@@ -470,7 +454,7 @@ export default function UpdatePricesPage() {
 
                     return (
                       <tr key={kode} className={`transition-colors ${isEdited ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-center align-middle">
                           <input
                             type="checkbox"
                             checked={selectedKodes.has(kode)}
@@ -569,7 +553,7 @@ export default function UpdatePricesPage() {
                               else newSet.delete(kode);
                               setSelectedKodes(newSet);
                             }}
-                            className="rounded border-slate-300 w-4 h-4 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            className="rounded border-slate-300 w-5 h-5 text-blue-600 focus:ring-blue-500 cursor-pointer mr-1"
                           />
                           <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
                             {kode}
@@ -722,6 +706,50 @@ export default function UpdatePricesPage() {
                 <CloudDownload className="w-4 h-4" /> Ya, Import Sekarang
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Floating Bulk Action Bar ── */}
+      {selectedKodes.size > 0 && (
+        <div className="fixed bottom-24 sm:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl shadow-slate-900/20 flex items-center gap-4 sm:gap-6 border border-slate-700 w-max max-w-[90vw] overflow-x-auto">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs font-bold">
+                {selectedKodes.size}
+              </span>
+              <span className="text-sm font-medium text-slate-300 hidden sm:inline">Produk terpilih</span>
+            </div>
+            
+            <div className="w-px h-8 bg-slate-700 shrink-0 hidden sm:block"></div>
+            
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider mr-1 hidden sm:inline">Export:</span>
+              <button
+                onClick={handleExportExcel}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-400 bg-emerald-400/10 hover:bg-emerald-400/20 rounded-lg transition-colors border border-emerald-400/20"
+                title="Export ke Excel"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Excel</span>
+              </button>
+              <button
+                onClick={handleExportPdf}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-rose-400 bg-rose-400/10 hover:bg-rose-400/20 rounded-lg transition-colors border border-rose-400/20"
+                title="Export ke PDF"
+              >
+                <FileText className="w-4 h-4" />
+                <span>PDF</span>
+              </button>
+            </div>
+            
+            <button
+              onClick={() => setSelectedKodes(new Set())}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0 ml-1"
+              title="Batal pilih semua"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
       )}
