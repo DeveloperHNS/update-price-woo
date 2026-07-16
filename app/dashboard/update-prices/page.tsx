@@ -712,8 +712,8 @@ export default function UpdatePricesPage() {
 
       {/* ── Floating Bulk Action Bar ── */}
       {selectedKodes.size > 0 && (
-        <div className="fixed bottom-4 sm:bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
-          <div className="bg-slate-900 text-white px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-2xl shadow-slate-900/20 flex items-center gap-3 sm:gap-6 border border-slate-700 w-max max-w-[95vw] overflow-x-auto">
+        <div className="fixed bottom-0 sm:bottom-8 left-0 sm:left-1/2 sm:-translate-x-1/2 w-full sm:w-max z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="bg-slate-900 text-white px-4 py-3 sm:rounded-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.2)] sm:shadow-2xl sm:shadow-slate-900/20 flex items-center justify-between sm:justify-start gap-3 sm:gap-6 border-t sm:border border-slate-700 w-full overflow-x-auto">
             <div className="flex items-center gap-2 shrink-0">
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs font-bold">
                 {selectedKodes.size}
@@ -727,25 +727,25 @@ export default function UpdatePricesPage() {
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wider mr-1 hidden sm:inline">Export:</span>
               <button
                 onClick={handleExportExcel}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-400 bg-emerald-400/10 hover:bg-emerald-400/20 rounded-lg transition-colors border border-emerald-400/20"
+                className="flex items-center gap-1.5 px-4 sm:px-3 py-2 sm:py-1.5 text-sm font-medium text-emerald-400 bg-emerald-400/10 hover:bg-emerald-400/20 rounded-lg transition-colors border border-emerald-400/20"
                 title="Export ke Excel"
               >
                 <FileSpreadsheet className="w-4 h-4" />
-                <span>Excel</span>
+                <span className="hidden sm:inline">Excel</span>
               </button>
               <button
                 onClick={handleExportPdf}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-rose-400 bg-rose-400/10 hover:bg-rose-400/20 rounded-lg transition-colors border border-rose-400/20"
+                className="flex items-center gap-1.5 px-4 sm:px-3 py-2 sm:py-1.5 text-sm font-medium text-rose-400 bg-rose-400/10 hover:bg-rose-400/20 rounded-lg transition-colors border border-rose-400/20"
                 title="Export ke PDF"
               >
                 <FileText className="w-4 h-4" />
-                <span>PDF</span>
+                <span className="hidden sm:inline">PDF</span>
               </button>
             </div>
             
             <button
               onClick={() => setSelectedKodes(new Set())}
-              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0 ml-1"
+              className="p-2 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0 ml-1"
               title="Batal pilih semua"
             >
               <X className="w-5 h-5" />
