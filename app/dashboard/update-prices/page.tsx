@@ -4,10 +4,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentProfile, type UserProfile } from "@/lib/profile";
 import type { ProductWithStatus } from "@/app/api/sync/products/route";
-import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal, CloudDownload } from "lucide-react";
+import { Search, RefreshCw, AlertCircle, Save, CheckCircle2, ChevronDown, X, SlidersHorizontal, CloudDownload, FileSpreadsheet, FileText } from "lucide-react";
 import { formatRp, parseProductName } from "@/lib/format";
-
-
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 function MultiSelectDropdown({
   options,
   selected,
@@ -120,6 +121,7 @@ export default function UpdatePricesPage() {
   const [saving, setSaving] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedKodes, setSelectedKodes] = useState<Set<string>>(new Set());
   const ITEMS_PER_PAGE = 50;
 
   // Reset page when filters change
@@ -225,6 +227,45 @@ export default function UpdatePricesPage() {
     }
   };
 
+  const handleExportExcel = () => {
+    const dataToExport = filtered.filter(p => selectedKodes.size === 0 || selectedKodes.has(p["Kode Accurate"] || ""));
+    const ws = XLSX.utils.json_to_sheet(dataToExport.map(p => ({
+      "Kode Accurate": p["Kode Accurate"],
+      "Nama Barang": p["NAMA BARANG"],
+      "Kategori": p["KATEGORI"],
+      "Brand": p["NAMA BRAND"],
+      "Harga SP": formatRp(p["SP"]),
+      "Harga Modal": p["CP"],
+      "Harga Dealer": p["PRICE"],
+      "Stok": p["Stok Sistem"] ?? 0
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Update_Harga");
+    XLSX.writeFile(wb, `Export_Harga_${new Date().toISOString().split("T")[0]}.xlsx`);
+  };
+
+  const handleExportPdf = () => {
+    const dataToExport = filtered.filter(p => selectedKodes.size === 0 || selectedKodes.has(p["Kode Accurate"] || ""));
+    const doc = new jsPDF("landscape");
+    doc.text("Laporan Harga & Stok", 14, 15);
+    autoTable(doc, {
+      startY: 20,
+      head: [["Kode", "Nama Barang", "Kategori", "Harga SP", "Modal", "Dealer", "Stok"]],
+      body: dataToExport.map(p => [
+        p["Kode Accurate"] || "-",
+        p["NAMA BARANG"] || "-",
+        p["KATEGORI"] || "-",
+        formatRp(p["SP"]),
+        formatRp(p["CP"]),
+        formatRp(p["PRICE"]),
+        p["Stok Sistem"]?.toString() || "0"
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [41, 128, 185] }
+    });
+    doc.save(`Export_Harga_${new Date().toISOString().split("T")[0]}.pdf`);
+  };
+
   const filtered = products.filter((p) => {
     const q = search.toLowerCase().trim();
     const tokens = q ? q.split(/\s+/) : [];
@@ -258,9 +299,25 @@ export default function UpdatePricesPage() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
+            onClick={handleExportExcel}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors"
+            title="Export ke Excel"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span className="hidden sm:inline">Excel</span>
+          </button>
+          <button
+            onClick={handleExportPdf}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors"
+            title="Export ke PDF"
+          >
+            <FileText className="w-4 h-4" />
+            <span className="hidden sm:inline">PDF</span>
+          </button>
+          <button
             onClick={() => setConfirmModal(true)}
             disabled={loading || saving || pulling}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors disabled:opacity-50"
             title="Import semua data dari Google Sheet"
           >
             <CloudDownload className={`w-4 h-4 ${pulling ? "animate-pulse" : ""}`} />
@@ -382,10 +439,25 @@ export default function UpdatePricesPage() {
               <table className="w-full text-sm text-left min-w-[780px] table-fixed">
                 <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
                   <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                    <th className="px-4 py-3 w-12">
+                      <input
+                        type="checkbox"
+                        checked={paginatedProducts.length > 0 && selectedKodes.size === paginatedProducts.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedKodes(new Set(paginatedProducts.map(p => p["Kode Accurate"] || "")));
+                          } else {
+                            setSelectedKodes(new Set());
+                          }
+                        }}
+                        className="rounded border-slate-300 w-4 h-4 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </th>
                     <th className="px-4 py-3">Produk</th>
                     <th className="px-4 py-3 w-[120px] lg:w-36">Harga SRP</th>
-                    <th className="px-4 py-3 w-[160px] lg:w-44">Harga Modal (CP)</th>
-                    <th className="px-4 py-3 w-[160px] lg:w-44">Harga Dealer</th>
+                    <th className="px-4 py-3 w-[140px] lg:w-40">Harga Modal (CP)</th>
+                    <th className="px-4 py-3 w-[140px] lg:w-40">Harga Dealer</th>
+                    <th className="px-4 py-3 w-[80px]">Stok</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -398,6 +470,19 @@ export default function UpdatePricesPage() {
 
                     return (
                       <tr key={kode} className={`transition-colors ${isEdited ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedKodes.has(kode)}
+                            onChange={(e) => {
+                              const newSet = new Set(selectedKodes);
+                              if (e.target.checked) newSet.add(kode);
+                              else newSet.delete(kode);
+                              setSelectedKodes(newSet);
+                            }}
+                            className="rounded border-slate-300 w-4 h-4 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                             <span className="text-[11px] font-mono font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
@@ -446,6 +531,9 @@ export default function UpdatePricesPage() {
                               }`}
                           />
                         </td>
+                        <td className="px-4 py-3 font-semibold text-slate-700 text-center">
+                          {p["Stok Sistem"] ?? 0}
+                        </td>
                       </tr>
                     );
                   })}
@@ -472,6 +560,17 @@ export default function UpdatePricesPage() {
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedKodes.has(kode)}
+                            onChange={(e) => {
+                              const newSet = new Set(selectedKodes);
+                              if (e.target.checked) newSet.add(kode);
+                              else newSet.delete(kode);
+                              setSelectedKodes(newSet);
+                            }}
+                            className="rounded border-slate-300 w-4 h-4 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
                           <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
                             {kode}
                           </span>
@@ -495,12 +594,11 @@ export default function UpdatePricesPage() {
                           Diubah
                         </span>
                       )}
-                    </div>
-
-                    {/* SRP (read-only) */}
-                    <div className="flex items-center justify-between py-2 border-b border-slate-100 mb-3">
-                      <span className="text-xs text-slate-500">Harga SRP</span>
-                      <span className="text-sm font-semibold text-slate-700">{formatRp(p["SP"])}</span>
+                      <div className="flex flex-col items-end shrink-0 gap-1">
+                        <p className="text-xs text-slate-400 font-medium">SRP</p>
+                        <p className="text-sm font-bold text-slate-700">{formatRp(p["SP"])}</p>
+                        <p className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded font-semibold mt-1">Stok: {p["Stok Sistem"] ?? 0}</p>
+                      </div>
                     </div>
 
                     {/* Editable fields */}

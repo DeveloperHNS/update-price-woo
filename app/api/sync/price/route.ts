@@ -72,14 +72,21 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
+    const stok = typeof product["Stok Sistem"] === "number" ? product["Stok Sistem"] : 0;
+    const wooPayload = { 
+      regular_price: priceStr,
+      manage_stock: true,
+      stock_quantity: stok
+    };
+
     // Sync to WooCommerce
     if (mapping.woo_variation_id) {
       await wooUpdate(
         `products/${mapping.woo_product_id}/variations/${mapping.woo_variation_id}`,
-        { regular_price: priceStr }
+        wooPayload
       );
     } else {
-      await wooUpdate(`products/${mapping.woo_product_id}`, { regular_price: priceStr });
+      await wooUpdate(`products/${mapping.woo_product_id}`, wooPayload);
     }
 
     const duration = Date.now() - startTime;
@@ -90,9 +97,9 @@ export async function POST(req: NextRequest) {
       woo_product_id: mapping.woo_product_id,
       action: "sync_price",
       status: "success",
-      message: `Harga disync: Rp ${priceStr}`,
+      message: `Harga & Stok disync: Rp ${priceStr} (Stok: ${stok})`,
       old_value: null,
-      new_value: { regular_price: priceStr, source: "SP" },
+      new_value: { regular_price: priceStr, stock_quantity: stok, source: "SP/Stok Sistem" },
       triggered_by: triggered_by ?? null,
       duration_ms: duration,
     });

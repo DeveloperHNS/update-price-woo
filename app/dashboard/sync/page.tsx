@@ -561,15 +561,6 @@ export default function SyncPage() {
           )}
           {tab === "unmatched" && (
             <>
-              <input type="file" accept=".csv" className="hidden" ref={csvInputRef} onChange={handleCsvFileChange} />
-              <button
-                onClick={handleUploadCsv}
-                disabled={loading || autoMapping || csvUploading}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors disabled:opacity-50"
-              >
-                <FileUp className={`w-4 h-4 ${csvUploading ? "animate-pulse" : ""}`} />
-                <span className="hidden lg:inline">{csvUploading ? "Memproses CSV..." : "Upload CSV Woo"}</span>
-              </button>
               <button
                 onClick={handleAutoMap}
                 disabled={loading || autoMapping || csvUploading}
@@ -596,6 +587,20 @@ export default function SyncPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">Refresh</span>
           </button>
+          
+          {tab === "unmatched" && (
+            <>
+              <input type="file" accept=".csv" className="hidden" ref={csvInputRef} onChange={handleCsvFileChange} />
+              <button
+                onClick={handleUploadCsv}
+                disabled={loading || autoMapping || csvUploading}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-lg transition-colors disabled:opacity-50 ml-2 border border-emerald-300"
+              >
+                <FileUp className={`w-4 h-4 ${csvUploading ? "animate-pulse" : ""}`} />
+                <span className="hidden lg:inline">{csvUploading ? "Memproses CSV..." : "Upload CSV Woo"}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

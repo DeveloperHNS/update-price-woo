@@ -111,6 +111,7 @@ export async function POST(req: NextRequest) {
       const cp = getVal(["CP", "MODAL"]);
       const sp = getVal(["SP", "HARGA JUAL", "SRP"]);
       const price = getVal(["PRICE", "HARGA DEALER", "DEALER"]);
+      const stok = getVal(["STOK", "STOCK", "QTY"]);
       
       const record: Record<string, unknown> = {
         "Kode Accurate": kodeAccurate,
@@ -125,6 +126,10 @@ export async function POST(req: NextRequest) {
       if (cp) record["CP"] = cp;
       if (sp) record["SP"] = sp;
       if (price) record["PRICE"] = price;
+      if (stok !== null && stok !== undefined && stok !== "") {
+        const parsedStok = parseInt(stok.toString().replace(/,/g, ""), 10);
+        if (!isNaN(parsedStok)) record["Stok Sistem"] = parsedStok;
+      }
       
       upsertQueue.push(record);
 
